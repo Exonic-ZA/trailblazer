@@ -1,0 +1,75 @@
+name: Build and push docker images to Elastic Container Registry
+
+env:
+  CONTAINER_REGISTRY_URL: ${{ secrets.CONTAINER_REGISTRY_URL }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to tag the container image'
+        required: true
+        default: 'preview'
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  docker-build-push:
+    name: Build and push docker images
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [alpine, debian, ubuntu]
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Set environment ECR_IMAGE_TAGS
+        run: |
+          # Use input version or fallback to preview
+          VERSION=${{ github.event.inputs.version }}
+          BRANCH=${GITHUB_REF_NAME:-develop}
+
+          # Define tags
+          if [[ "$BRANCH" == "master" || "$BRANCH" == "main" ]]; then
+            TAGS="${{ env.CONTAINER_REGISTRY_URL }}:$VERSION"
+            TAGS+=",${{ env.CONTAINER_REGISTRY_URL }}:latest"
+          else
+            TAGS="${{ env.CONTAINER_REGISTRY_URL }}:$VERSION-$BRANCH"
+          fi
+
+          echo "ECR_IMAGE_TAGS=$TAGS" >> $GITHUB_ENV
+
+      - name: Set environment ECR_IMAGE_PLATFORMS
+        run: |
+          PLATFORMS="linux/amd64,linux/arm64"
+          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
+            PLATFORMS+=",linux/arm/v7"
+          fi
+          echo "ECR_IMAGE_PLATFORMS=$PLATFORMS" >> $GITHUB_ENV
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          file: Dockerfile.${{ matrix.os }}
+          tags: ${{ env.ECR_IMAGE_TAGS }}
+          platforms: ${{ env.ECR_IMAGE_PLATFORMS }}
+          push: true
