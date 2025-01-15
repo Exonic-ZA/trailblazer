@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 0
           submodules: true
       - run: git checkout ${{ github.ref_name }}
-        working-directory: ./traailblazer-web
+        working-directory: ./trailblazer-web
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -30,9 +30,9 @@ jobs:
         with:
           node-version: 21
           cache: npm
-          cache-dependency-path: traailblazer-web/package-lock.json
+          cache-dependency-path: trailblazer-web/package-lock.json
       - run: npm ci && npm run build
-        working-directory: ./traailblazer-web
+        working-directory: ./trailblazer-web
       - run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
