@@ -63,9 +63,7 @@ jobs:
         with:
           context: containerisation
           file: containerisation/Dockerfile
-          tags: |
-            ${{ env.CONTAINER_REGISTRY_URL }}:${{ github.event.inputs.version }}
-            ${{ env.CONTAINER_REGISTRY_URL }}:latest
+          tags: ${{ env.TAGS }}
           build-args: |
             TRAILBLAZER_VERSION=${{ github.event.inputs.version }}
             BUILDS_URL=${{ secrets.BUILDS_URL }}
