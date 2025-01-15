@@ -1,7 +1,12 @@
 FROM alpine:3.21
 
-ARG TRACCAR_VERSION=6.6
+# Arguments for version, architecture, base URL, and environment
+ARG TRAILBLAZER_VERSION
+ARG TARGETARCH
+ARG BUILDS_URL
+ARG ENVIRONMENT
 
+# Set environment variables
 ENV TRAILBLAZER_VERSION=${TRAILBLAZER_VERSION}
 
 WORKDIR /opt/traccar
@@ -11,8 +16,16 @@ RUN set -ex; \
       openjdk17-jre-headless \
       wget \
       unzip; \
-    # Download and extract Traccar
-    wget -qO /tmp/traccar.zip https://github.com/traccar/traccar/releases/download/vTRAILBLAZER_VERSION/traccar-other-TRAILBLAZER_VERSION.zip; \
+    # Determine the correct architecture-specific zip based on TARGETARCH
+    if [ "$TARGETARCH" = "amd64" ]; then \
+      ARCH="64"; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+      ARCH="arm"; \
+    else \
+      echo "Unsupported architecture: $TARGETARCH" && exit 1; \
+    fi; \
+    # Download and extract the release zip
+    wget -qO /tmp/traccar.zip ${BUILDS_URL}/builds/${ENVIRONMENT}/traccar-linux-${ARCH}-${TRAILBLAZER_VERSION}.zip; \
     unzip -qo /tmp/traccar.zip -d /opt/traccar; \
     rm /tmp/traccar.zip; \
     apk del wget unzip
