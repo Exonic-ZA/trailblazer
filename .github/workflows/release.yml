@@ -10,7 +10,6 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-22.04
 
     steps:
@@ -19,7 +18,7 @@ jobs:
           fetch-depth: 0
           submodules: true
       - run: git checkout ${{ github.ref_name }}
-        working-directory: ./traccar-web
+        working-directory: ./trailblazer-web
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -30,9 +29,9 @@ jobs:
         with:
           node-version: 21
           cache: npm
-          cache-dependency-path: traccar-web/package-lock.json
+          cache-dependency-path: trailblazer-web/package-lock.json
       - run: npm ci && npm run build
-        working-directory: ./traccar-web
+        working-directory: ./trailblazer-web
       - run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
@@ -46,9 +45,20 @@ jobs:
           wget -q https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4+7/OpenJDK21U-jdk_x64_linux_hotspot_21.0.4_7.tar.gz
           wget -q https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4+7/OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.4_7.tar.gz
           ./package.sh ${{ github.event.inputs.version }}
+      - name: Set environment variable
+        run: echo "DEPLOY_ENV=${{ github.event.inputs.environment || github.ref_name }}" >> $GITHUB_ENV
       - name: Upload installers
         working-directory: ./setup
         env:
           S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
           S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
-        run: s3cmd --acl-public put traccar-*.zip s3://traccar/builds/ --host=nyc3.digitaloceanspaces.com --host-bucket=traccar --access_key="$S3_ACCESS_KEY" --secret_key="$S3_SECRET_KEY"
+          S3_HOST: ${{ secrets.S3_HOST }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          DEPLOY_ENV: ${{ env.DEPLOY_ENV }}
+        run: |
+          echo "Uploading to s3://$S3_BUCKET/builds/$DEPLOY_ENV/"
+          s3cmd put traccar-*.zip s3://$S3_BUCKET/builds/$DEPLOY_ENV/ \
+            --host="$S3_HOST" \
+            --host-bucket="$S3_BUCKET" \
+            --access_key="$S3_ACCESS_KEY" \
+            --secret_key="$S3_SECRET_KEY" || exit 1

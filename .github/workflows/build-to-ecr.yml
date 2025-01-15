@@ -1,0 +1,55 @@
+name: Build and push multi-platform Docker images to Elastic Container Registry
+
+env:
+  CONTAINER_REGISTRY_URL: ${{ secrets.CONTAINER_REGISTRY_URL }}
+  BUILDS_URL: ${{ secrets.BUILDS_URL }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Trailblazer version to download and to tag the container image'
+        required: true
+        default: '6.6.1'
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  docker-build-push:
+    name: Build and push multi-platform image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: containerisation
+          file: containerisation/Dockerfile
+          tags: |
+            ${{ env.CONTAINER_REGISTRY_URL }}:${{ github.event.inputs.version }}
+            ${{ env.CONTAINER_REGISTRY_URL }}:latest
+          build-args: |
+            TRACCAR_VERSION=${{ github.event.inputs.version }}
+            BUILDS_URL=${{ env.BUILDS_URL }}
+          platforms: linux/amd64,linux/arm64
+          push: true
