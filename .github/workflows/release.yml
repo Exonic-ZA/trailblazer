@@ -11,12 +11,6 @@ on:
         description: 'Deployment environment (e.g., develop, staging, production)'
         required: false
 
-  push:
-    branches:
-      - master
-      - develop
-      - staging
-
 jobs:
   build:
     runs-on: ubuntu-22.04
