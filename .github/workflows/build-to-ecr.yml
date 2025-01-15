@@ -45,14 +45,18 @@ jobs:
           BRANCH_NAME=${{ github.ref_name }}
           if [[ "$BRANCH_NAME" == "main" || "$BRANCH_NAME" == "master" ]]; then
             ENVIRONMENT="prod"
+            TAGS="${{ env.CONTAINER_REGISTRY_URL }}:${{ github.event.inputs.version }},${{ env.CONTAINER_REGISTRY_URL }}:latest"
           elif [[ "$BRANCH_NAME" == "develop" ]]; then
             ENVIRONMENT="develop"
+            TAGS="${{ env.CONTAINER_REGISTRY_URL }}:${{ github.event.inputs.version }}-develop,${{ env.CONTAINER_REGISTRY_URL }}:latest-develop"
           elif [[ "$BRANCH_NAME" == "staging" ]]; then
             ENVIRONMENT="staging"
+            TAGS="${{ env.CONTAINER_REGISTRY_URL }}:${{ github.event.inputs.version }}-staging,${{ env.CONTAINER_REGISTRY_URL }}:latest-staging"
           else
             echo "Unknown branch name: $BRANCH_NAME" && exit 1
           fi
           echo "ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_ENV
+          echo "TAGS=$TAGS" >> $GITHUB_ENV
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
