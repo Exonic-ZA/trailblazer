@@ -1,15 +1,16 @@
-name: Build and push docker images to Elastic Container Registry
+name: Build and push multi-platform Docker images to Elastic Container Registry
 
 env:
   CONTAINER_REGISTRY_URL: ${{ secrets.CONTAINER_REGISTRY_URL }}
+  BUILDS_URL: ${{ secrets.BUILDS_URL }}
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to tag the container image'
+        description: 'Trailblazer version to download and to tag the container image'
         required: true
-        default: 'preview'
+        default: '6.6.1'
 
 defaults:
   run:
@@ -17,11 +18,8 @@ defaults:
 
 jobs:
   docker-build-push:
-    name: Build and push docker images
+    name: Build and push multi-platform image
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        os: [alpine, debian, ubuntu]
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
@@ -42,34 +40,16 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Set environment ECR_IMAGE_TAGS
-        run: |
-          # Use input version or fallback to preview
-          VERSION=${{ github.event.inputs.version }}
-          BRANCH=${GITHUB_REF_NAME:-develop}
-
-          # Define tags
-          if [[ "$BRANCH" == "master" || "$BRANCH" == "main" ]]; then
-            TAGS="${{ env.CONTAINER_REGISTRY_URL }}:$VERSION"
-            TAGS+=",${{ env.CONTAINER_REGISTRY_URL }}:latest"
-          else
-            TAGS="${{ env.CONTAINER_REGISTRY_URL }}:$VERSION-$BRANCH"
-          fi
-
-          echo "ECR_IMAGE_TAGS=$TAGS" >> $GITHUB_ENV
-
-      - name: Set environment ECR_IMAGE_PLATFORMS
-        run: |
-          PLATFORMS="linux/amd64,linux/arm64"
-          if [[ "${{ matrix.os }}" == "ubuntu" ]]; then
-            PLATFORMS+=",linux/arm/v7"
-          fi
-          echo "ECR_IMAGE_PLATFORMS=$PLATFORMS" >> $GITHUB_ENV
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          file: Dockerfile.${{ matrix.os }}
-          tags: ${{ env.ECR_IMAGE_TAGS }}
-          platforms: ${{ env.ECR_IMAGE_PLATFORMS }}
+          context: containerisation
+          file: containerisation/Dockerfile
+          tags: |
+            ${{ env.CONTAINER_REGISTRY_URL }}:${{ github.event.inputs.version }}
+            ${{ env.CONTAINER_REGISTRY_URL }}:latest
+          build-args: |
+            TRACCAR_VERSION=${{ github.event.inputs.version }}
+            BUILDS_URL=${{ env.BUILDS_URL }}
+          platforms: linux/amd64,linux/arm64
           push: true
