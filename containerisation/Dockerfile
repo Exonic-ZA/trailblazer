@@ -25,7 +25,7 @@ RUN set -ex; \
       echo "Unsupported architecture: $TARGETARCH" && exit 1; \
     fi; \
     # Download and extract the release zip
-    wget -qO /tmp/traccar.zip ${BUILDS_URL}/builds/${ENVIRONMENT}/traccar-linux-${ARCH}-${TRAILBLAZER_VERSION}.zip; \
+    wget -qO /tmp/traccar.zip ${BUILDS_URL}/builds/${ENVIRONMENT}/traccar-other-${ARCH}-${TRAILBLAZER_VERSION}.zip; \
     unzip -qo /tmp/traccar.zip -d /opt/traccar; \
     rm /tmp/traccar.zip; \
     apk del wget unzip
