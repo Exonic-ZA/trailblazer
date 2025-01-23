@@ -11,7 +11,7 @@ info:
     url: https://www.apache.org/licenses/LICENSE-2.0.html
   version: '6.6'
 servers:
-  - url: https://demo.traccar.org/api
+  - url: https://localhost:3000/api
     description: Demo Server 1
   - url: https://demo2.traccar.org/api
     description: Demo Server 2
