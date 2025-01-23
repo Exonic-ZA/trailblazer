@@ -5,7 +5,6 @@ import org.traccar.api.security.PermissionsService;
 import org.traccar.database.StatisticsManager;
 import org.traccar.helper.Log;
 import org.traccar.helper.SessionHelper;
-import org.traccar.model.Device;
 import org.traccar.model.Image;
 import org.traccar.storage.Storage;
 import org.traccar.storage.StorageException;
