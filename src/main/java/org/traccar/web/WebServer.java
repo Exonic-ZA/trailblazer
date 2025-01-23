@@ -162,6 +162,7 @@ public class WebServer implements LifecycleObject {
             servletHolder.setInitParameter("dirAllowed", "false");
             servletHolder.setInitParameter("pathInfoOnly", "true");
             servletHandler.addServlet(servletHolder, "/api/media/*");
+            servletHandler.addServlet(servletHolder, "/api/uploads/*");
         }
 
         ResourceConfig resourceConfig = new ResourceConfig();
