@@ -42,7 +42,8 @@ RUN set -ex; \
     touch /opt/traccar/logs/tracker-server.log; \
     # Ensure correct ownership and permissions
     chown -R traccar:traccar /opt/traccar /opt/media; \
-    chmod -R 750 /opt/traccar /opt/media
+    chmod -R 750 /opt/traccar  \
+    chmod 777 /opt/media
 
 # Switch to the newly created user
 USER traccar
