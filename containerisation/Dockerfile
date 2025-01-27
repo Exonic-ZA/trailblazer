@@ -16,6 +16,8 @@ RUN set -ex; \
       openjdk17-jre-headless \
       wget \
       unzip; \
+    mkdir -p logs
+    touch logs/tracker-server.logs
     # Determine the correct architecture-specific zip based on TARGETARCH
     if [ "$TARGETARCH" = "amd64" ]; then \
       ARCH="64"; \
