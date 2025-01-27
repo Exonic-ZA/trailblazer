@@ -16,8 +16,6 @@ RUN set -ex; \
       openjdk17-jre-headless \
       wget \
       unzip; \
-    mkdir -p logs
-    touch logs/tracker-server.logs
     # Determine the correct architecture-specific zip based on TARGETARCH
     if [ "$TARGETARCH" = "amd64" ]; then \
       ARCH="64"; \
@@ -30,7 +28,13 @@ RUN set -ex; \
     wget -qO /tmp/traccar.zip ${BUILDS_URL}/builds/${ENVIRONMENT}/traccar-other-${TRAILBLAZER_VERSION}.zip; \
     unzip -qo /tmp/traccar.zip -d /opt/traccar; \
     rm /tmp/traccar.zip; \
-    apk del wget unzip
+    apk del wget unzip; \
+    # Create directories and files
+    mkdir -p /opt/traccar/logs /opt/media; \
+    touch /opt/traccar/logs/tracker-server.log; \
+    # Ensure the $USER has full access to directories and files
+    chown -R 1000:1000 /opt/traccar /opt/media; \
+    chmod -R u+rw /opt/traccar /opt/media
 
 # Set entrypoint and default command
 ENTRYPOINT ["java", "-Xms1g", "-Xmx1g", "-Djava.net.preferIPv4Stack=true"]
