@@ -1,3 +1,4 @@
+# Base image
 FROM alpine:3.21
 
 # Arguments for version, architecture, base URL, and environment
@@ -9,13 +10,19 @@ ARG ENVIRONMENT
 # Set environment variables
 ENV TRAILBLAZER_VERSION=${TRAILBLAZER_VERSION}
 
+# Set working directory
 WORKDIR /opt/traccar
 
+# Add necessary tools, install Java, and prepare the environment
 RUN set -ex; \
     apk add --no-cache --no-progress \
       openjdk17-jre-headless \
       wget \
-      unzip; \
+      unzip \
+      shadow; \
+    # Create a user and group with UID/GID 1000
+    addgroup -g 1000 traccar && \
+    adduser -D -u 1000 -G traccar traccar; \
     # Determine the correct architecture-specific zip based on TARGETARCH
     if [ "$TARGETARCH" = "amd64" ]; then \
       ARCH="64"; \
@@ -28,13 +35,17 @@ RUN set -ex; \
     wget -qO /tmp/traccar.zip ${BUILDS_URL}/builds/${ENVIRONMENT}/traccar-other-${TRAILBLAZER_VERSION}.zip; \
     unzip -qo /tmp/traccar.zip -d /opt/traccar; \
     rm /tmp/traccar.zip; \
+    # Clean up tools
     apk del wget unzip; \
-    # Create directories and files
+    # Create necessary directories for logs and media
     mkdir -p /opt/traccar/logs /opt/media; \
     touch /opt/traccar/logs/tracker-server.log; \
-    # Ensure the $USER has full access to directories and files
-    chown -R 1000:1000 /opt/traccar /opt/media; \
-    chmod -R u+rw /opt/traccar /opt/media
+    # Ensure correct ownership and permissions
+    chown -R traccar:traccar /opt/traccar /opt/media; \
+    chmod -R 750 /opt/traccar /opt/media
+
+# Switch to the newly created user
+USER traccar
 
 # Set entrypoint and default command
 ENTRYPOINT ["java", "-Xms1g", "-Xmx1g", "-Djava.net.preferIPv4Stack=true"]
