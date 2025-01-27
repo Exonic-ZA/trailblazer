@@ -45,7 +45,6 @@ RUN set -ex; \
     chmod -R 750 /opt/traccar /opt/media
 
 # Switch to the newly created user
-USER traccar
 
 # Set entrypoint and default command
 ENTRYPOINT ["java", "-Xms1g", "-Xmx1g", "-Djava.net.preferIPv4Stack=true"]
