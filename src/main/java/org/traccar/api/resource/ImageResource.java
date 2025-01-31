@@ -35,7 +35,7 @@ import java.util.List;
 public class ImageResource extends BaseObjectResource<Image> {
 
     private static final int DEFAULT_BUFFER_SIZE = 8192;
-    private static final int IMAGE_SIZE_LIMIT = 500000;
+    private static final int IMAGE_SIZE_LIMIT = 10000000;
 
     @Inject
     private MediaManager mediaManager;
