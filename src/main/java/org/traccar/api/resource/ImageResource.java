@@ -14,6 +14,8 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.traccar.api.BaseObjectResource;
 import org.traccar.database.MediaManager;
+import org.traccar.model.Device;
+import org.traccar.model.Group;
 import org.traccar.model.Image;
 import org.traccar.model.User;
 import org.traccar.storage.StorageException;
@@ -26,8 +28,10 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
 
 @Path("images")
 @Produces(MediaType.APPLICATION_JSON)
@@ -57,27 +61,67 @@ public class ImageResource extends BaseObjectResource<Image> {
 
     @GET
     public Collection<Image> get(
-            @QueryParam("all") boolean all, @QueryParam("userId") long userId,
+            @QueryParam("all") boolean all,
+            @QueryParam("userId") long userId,
             @QueryParam("deviceId") List<Long> deviceIds,
-            @QueryParam("id") List<Long> imageIds) throws StorageException {
+            @QueryParam("groupId") List<Long> groupIds,
+            @QueryParam("id") List<Long> imageIds,
+            @QueryParam("from") Date from,
+            @QueryParam("to") Date to) throws StorageException {
 
-        if (!deviceIds.isEmpty() || !imageIds.isEmpty()) {
+        if (!deviceIds.isEmpty() || !groupIds.isEmpty() || !imageIds.isEmpty() || from != null || to != null) {
 
             List<Image> result = new LinkedList<>();
-            for (Long deviceId : deviceIds) {
-                result.addAll(storage.getObjects(Image.class, new Request(
-                        new Columns.All(),
-                        new Condition.And(
-                                new Condition.Equals("deviceId",  deviceId),
-                                new Condition.Permission(User.class, getUserId(), Image.class)))));
+            Set<Long> targetDeviceIds = new HashSet<>(deviceIds);
+
+            if (!groupIds.isEmpty()) {
+                for (Long groupId : groupIds) {
+                    permissionsService.checkPermission(Group.class, getUserId(), groupId);
+                    Collection<Device> groupDevices = storage.getObjects(Device.class, new Request(
+                            new Columns.All(),
+                            new Condition.Permission(Group.class, groupId, Device.class).excludeGroups()));
+                    for (Device device : groupDevices) {
+                        targetDeviceIds.add(device.getId());
+                    }
+                }
             }
-            for (Long imageId : imageIds) {
-                result.addAll(storage.getObjects(Image.class, new Request(
-                        new Columns.All(),
-                        new Condition.And(
-                                new Condition.Equals("id", imageId),
-                                new Condition.Permission(User.class, getUserId(), Image.class)))));
+
+            var baseConditions = new LinkedList<Condition>();
+            baseConditions.add(new Condition.Permission(User.class, getUserId(), Image.class));
+
+            if (from != null && to != null) {
+                baseConditions.add(new Condition.Between("uploadedAt", "from", from, "to", to));
+            } else if (from != null) {
+                baseConditions.add(new Condition.Compare("uploadedAt", ">=", "from", from));
+            } else if (to != null) {
+                baseConditions.add(new Condition.Compare("uploadedAt", "<=", "to", to));
             }
+
+            if (!imageIds.isEmpty()) {
+                for (Long imageId : imageIds) {
+                    var conditions = new LinkedList<>(baseConditions);
+                    conditions.add(new Condition.Equals("id", imageId));
+
+                    var request = new Request(new Columns.All(), Condition.merge(conditions));
+                    result.addAll(storage.getObjects(Image.class, request));
+                }
+            }
+
+            if (!targetDeviceIds.isEmpty()) {
+                for (Long deviceId : targetDeviceIds) {
+                    var conditions = new LinkedList<>(baseConditions);
+                    conditions.add(new Condition.Equals("deviceId", deviceId));
+
+                    var request = new Request(new Columns.All(), Condition.merge(conditions));
+                    result.addAll(storage.getObjects(Image.class, request));
+                }
+            }
+
+            if (targetDeviceIds.isEmpty() && imageIds.isEmpty() && (from != null || to != null)) {
+                var request = new Request(new Columns.All(), Condition.merge(baseConditions));
+                result.addAll(storage.getObjects(Image.class, request));
+            }
+
             return result;
 
         } else {
