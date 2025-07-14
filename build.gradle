@@ -118,3 +118,10 @@ jar {
                 "Class-Path": configurations.runtimeClasspath.files.collect { "lib/$it.name" }.join(" "))
     }
 }
+
+task runDebug(type: JavaExec) {
+    group = 'application'
+    mainClass = 'org.traccar.Main'
+    classpath = sourceSets.main.runtimeClasspath
+    args = ['-c', 'debug.xml']
+}
