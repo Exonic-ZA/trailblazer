@@ -14,10 +14,12 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.traccar.api.BaseObjectResource;
 import org.traccar.database.MediaManager;
+import org.traccar.helper.model.DeviceUtil;
 import org.traccar.model.Device;
 import org.traccar.model.Group;
 import org.traccar.model.Image;
 import org.traccar.model.User;
+import org.traccar.storage.Storage;
 import org.traccar.storage.StorageException;
 import org.traccar.storage.query.Columns;
 import org.traccar.storage.query.Condition;
@@ -27,11 +29,14 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Path("images")
 @Produces(MediaType.APPLICATION_JSON)
@@ -77,12 +82,11 @@ public class ImageResource extends BaseObjectResource<Image> {
             if (!groupIds.isEmpty()) {
                 for (Long groupId : groupIds) {
                     permissionsService.checkPermission(Group.class, getUserId(), groupId);
-                    Collection<Device> groupDevices = storage.getObjects(Device.class, new Request(
-                            new Columns.All(),
-                            new Condition.Permission(Group.class, groupId, Device.class).excludeGroups()));
-                    for (Device device : groupDevices) {
-                        targetDeviceIds.add(device.getId());
-                    }
+                }
+                DeviceUtil.getAccessibleDevices(storage, userId, deviceIds, groupIds);
+                Collection<Device> groupDevices = DeviceUtil.getAccessibleDevices(storage, getUserId(), Collections.emptyList(), groupIds);
+                for (Device device : groupDevices) {
+                    targetDeviceIds.add(device.getId());
                 }
             }
 
