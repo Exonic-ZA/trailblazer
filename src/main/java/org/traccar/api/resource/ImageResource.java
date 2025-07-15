@@ -19,7 +19,6 @@ import org.traccar.model.Device;
 import org.traccar.model.Group;
 import org.traccar.model.Image;
 import org.traccar.model.User;
-import org.traccar.storage.Storage;
 import org.traccar.storage.StorageException;
 import org.traccar.storage.query.Columns;
 import org.traccar.storage.query.Condition;
@@ -34,9 +33,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Path("images")
 @Produces(MediaType.APPLICATION_JSON)
@@ -84,7 +81,8 @@ public class ImageResource extends BaseObjectResource<Image> {
                     permissionsService.checkPermission(Group.class, getUserId(), groupId);
                 }
                 DeviceUtil.getAccessibleDevices(storage, userId, deviceIds, groupIds);
-                Collection<Device> groupDevices = DeviceUtil.getAccessibleDevices(storage, getUserId(), Collections.emptyList(), groupIds);
+                Collection<Device> groupDevices = DeviceUtil.getAccessibleDevices(storage,
+                        getUserId(), Collections.emptyList(), groupIds);
                 for (Device device : groupDevices) {
                     targetDeviceIds.add(device.getId());
                 }
