@@ -14,7 +14,6 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.traccar.api.BaseObjectResource;
 import org.traccar.database.MediaManager;
-import org.traccar.helper.model.DeviceUtil;
 import org.traccar.model.Device;
 import org.traccar.model.Group;
 import org.traccar.model.Image;
@@ -61,6 +60,49 @@ public class ImageResource extends BaseObjectResource<Image> {
         };
     }
 
+    private Collection<Device> getDevicesForGroups(List<Long> groupIds) throws StorageException {
+        if (groupIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Set<Device> result = new HashSet<>();
+
+        // Get all devices the user has access to
+        Collection<Device> userDevices = storage.getObjects(Device.class, new Request(
+                new Columns.All(),
+                new Condition.Permission(User.class, getUserId(), Device.class)));
+
+        // Get all groups the user has access to
+        Collection<Group> userGroups = storage.getObjects(Group.class, new Request(
+                new Columns.All(),
+                new Condition.Permission(User.class, getUserId(), Group.class)));
+
+        // Create a set of all requested group IDs and their descendants
+        Set<Long> expandedGroupIds = new HashSet<>(groupIds);
+
+        // Expand group hierarchy
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (Group group : userGroups) {
+                if (group.getGroupId() > 0 && expandedGroupIds.contains(group.getGroupId())) {
+                    if (expandedGroupIds.add(group.getId())) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        // Find devices that belong to any of the expanded groups
+        for (Device device : userDevices) {
+            if (device.getGroupId() > 0 && expandedGroupIds.contains(device.getGroupId())) {
+                result.add(device);
+            }
+        }
+
+        return result;
+    }
+
     @GET
     public Collection<Image> get(
             @QueryParam("all") boolean all,
@@ -77,12 +119,13 @@ public class ImageResource extends BaseObjectResource<Image> {
             Set<Long> targetDeviceIds = new HashSet<>(deviceIds);
 
             if (!groupIds.isEmpty()) {
+                // Check permissions for all group IDs first
                 for (Long groupId : groupIds) {
                     permissionsService.checkPermission(Group.class, getUserId(), groupId);
                 }
-                DeviceUtil.getAccessibleDevices(storage, userId, deviceIds, groupIds);
-                Collection<Device> groupDevices = DeviceUtil.getAccessibleDevices(storage,
-                        getUserId(), Collections.emptyList(), groupIds);
+
+                // Get devices for the specified groups using the simpler method
+                Collection<Device> groupDevices = getDevicesForGroups(groupIds);
                 for (Device device : groupDevices) {
                     targetDeviceIds.add(device.getId());
                 }
