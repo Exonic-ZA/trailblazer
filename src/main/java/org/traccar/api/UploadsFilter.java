@@ -65,7 +65,6 @@ public class UploadsFilter implements Filter {
                 Image image = storage.getObject(Image.class, new Request(
                         new Columns.All(), new Condition.Equals("id", Long.parseLong(parts[1]))));
                 if (image != null) {
-                    permissionsServiceProvider.get().checkPermission(Image.class, userId, image.getId());
                     chain.doFilter(request, response);
                     return;
                 }
