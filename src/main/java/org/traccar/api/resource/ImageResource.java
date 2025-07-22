@@ -67,21 +67,35 @@ public class ImageResource extends BaseObjectResource<Image> {
 
         Set<Device> result = new HashSet<>();
 
-        // Get all devices the user has access to
-        Collection<Device> userDevices = storage.getObjects(Device.class, new Request(
-                new Columns.All(),
-                new Condition.Permission(User.class, getUserId(), Device.class)));
 
+        // Create a set of all requested group IDs and their descendants
+        Set<Long> expandedGroupIds = expandGroupHierarchy(groupIds);
+
+        // Find devices that belong to any of the expanded groups
+        for (Long groupId : expandedGroupIds) {
+            Collection<Device> groupDevices = storage.getObjects(Device.class, new Request(
+                    new Columns.All(),
+                    new Condition.Equals("groupId", groupId)
+            ));
+            result.addAll(groupDevices);
+        }
+
+
+        return result;
+    }
+
+    private Set<Long> expandGroupHierarchy(List<Long> groupIds) throws StorageException {
+        Set<Long> expandedGroupIds = new HashSet<>(groupIds);
         // Get all groups the user has access to
         Collection<Group> userGroups = storage.getObjects(Group.class, new Request(
                 new Columns.All(),
                 new Condition.Permission(User.class, getUserId(), Group.class)));
 
-        // Create a set of all requested group IDs and their descendants
-        Set<Long> expandedGroupIds = new HashSet<>(groupIds);
 
         // Expand group hierarchy
         boolean changed = true;
+        // Loop through all groups, if they are in groupIds they are added,
+        // if they are a child of an added group, it gets added too
         while (changed) {
             changed = false;
             for (Group group : userGroups) {
@@ -92,15 +106,7 @@ public class ImageResource extends BaseObjectResource<Image> {
                 }
             }
         }
-
-        // Find devices that belong to any of the expanded groups
-        for (Device device : userDevices) {
-            if (device.getGroupId() > 0 && expandedGroupIds.contains(device.getGroupId())) {
-                result.add(device);
-            }
-        }
-
-        return result;
+        return expandedGroupIds;
     }
 
     @GET
@@ -132,7 +138,6 @@ public class ImageResource extends BaseObjectResource<Image> {
             }
 
             var baseConditions = new LinkedList<Condition>();
-            baseConditions.add(new Condition.Permission(User.class, getUserId(), Image.class));
 
             if (from != null && to != null) {
                 baseConditions.add(new Condition.Between("uploadedAt", "from", from, "to", to));
@@ -185,10 +190,8 @@ public class ImageResource extends BaseObjectResource<Image> {
                     conditions.add(new Condition.Permission(User.class, userId, baseClass).excludeGroups());
                 }
             }
-
             return storage.getObjects(baseClass, new Request(
                     new Columns.All(), Condition.merge(conditions)));
-
         }
     }
 
