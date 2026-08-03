@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 - 2018 Anton Tananaev (anton@traccar.org)
+ * Copyright 2013 - 2026 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package org.traccar.protocol;
 
 import io.netty.channel.Channel;
 import org.traccar.BaseProtocolDecoder;
+import org.traccar.model.WifiAccessPoint;
 import org.traccar.session.DeviceSession;
 import org.traccar.Protocol;
 import org.traccar.helper.DateBuilder;
@@ -27,6 +28,7 @@ import org.traccar.model.Network;
 import org.traccar.model.Position;
 
 import java.net.SocketAddress;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 public class MegastekProtocolDecoder extends BaseProtocolDecoder {
@@ -253,7 +255,7 @@ public class MegastekProtocolDecoder extends BaseProtocolDecoder {
             .number("(d+.d+)?,")                 // odometer
             .number("(d+)?,")                    // mcc
             .number("(d+)?,")                    // mnc
-            .number("(xxxx)?,")                  // lac
+            .number("(x+)?,")                    // lac
             .number("(x+)?,")                    // cid
             .number("(d+)?,")                    // gsm
             .groupBegin()
@@ -280,10 +282,13 @@ public class MegastekProtocolDecoder extends BaseProtocolDecoder {
             .groupEnd("?").text(",")
             .groupBegin()
             .number("(d+)?,")                    // rfid
+            .groupBegin()
             .number("([01])(d)?").optional()     // charge and belt status
             .expression("[^,]*,")
+            .groupEnd("?")
             .number("(d+)?,")                    // battery
             .expression("([^,]*)[,;]")           // alert
+            .expression("([^,]*)[,;]").optional() // wifi
             .groupEnd("?")
             .any()
             .compile();
@@ -324,6 +329,7 @@ public class MegastekProtocolDecoder extends BaseProtocolDecoder {
             position.set(Position.KEY_ODOMETER, parser.nextDouble(0) * 1000);
         }
 
+        Network network = new Network();
         if (parser.hasNext(5)) {
             int mcc = parser.nextInt();
             int mnc = parser.nextInt();
@@ -335,7 +341,7 @@ public class MegastekProtocolDecoder extends BaseProtocolDecoder {
                 if (rssi != null) {
                     tower.setSignalStrength(rssi);
                 }
-                position.setNetwork(new Network(tower));
+                network.addCellTower(tower);
             }
         }
 
@@ -372,20 +378,33 @@ public class MegastekProtocolDecoder extends BaseProtocolDecoder {
             position.set("belt", parser.nextInt());
         }
 
-        String battery = parser.next();
-        if (battery != null) {
-            position.set(Position.KEY_BATTERY, Integer.parseInt(battery));
+        if (parser.hasNext()) {
+            position.set(Position.KEY_BATTERY_LEVEL, parser.nextInt());
         }
 
         if (parser.hasNext()) {
             position.addAlarm(decodeAlarm(parser.next()));
         }
 
+        if (parser.hasNext()) {
+            String[] points = parser.next().split("\\|");
+            for (String point : points) {
+                String[] wifi = point.split(":");
+                String mac = wifi[0].replaceAll("(..)", "$1:");
+                network.addWifiAccessPoint(WifiAccessPoint.from(
+                        mac.substring(0, mac.length() - 1), Integer.parseInt(wifi[1])));
+            }
+        }
+
+        if (network.getCellTowers() != null || network.getWifiAccessPoints() != null) {
+            position.setNetwork(network);
+        }
+
         return position;
     }
 
     private String decodeAlarm(String value) {
-        value = value.toLowerCase();
+        value = value.toLowerCase(Locale.ROOT);
         if (value.startsWith("geo")) {
             if (value.endsWith("in")) {
                 return Position.ALARM_GEOFENCE_ENTER;

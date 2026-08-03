@@ -22,6 +22,7 @@ import org.traccar.helper.model.AttributeUtil;
 import org.traccar.session.DeviceSession;
 import org.traccar.Protocol;
 import org.traccar.helper.DataConverter;
+import org.traccar.helper.DateUtil;
 import org.traccar.helper.Parser;
 import org.traccar.helper.PatternBuilder;
 import org.traccar.helper.UnitsConverter;
@@ -31,9 +32,8 @@ import org.traccar.model.Position;
 import org.traccar.protobuf.starlink.StarLinkMessage;
 
 import java.net.SocketAddress;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
-import java.util.TimeZone;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.regex.Pattern;
 
 public class StarLinkProtocolDecoder extends BaseProtocolDecoder {
@@ -52,7 +52,7 @@ public class StarLinkProtocolDecoder extends BaseProtocolDecoder {
             .compile();
 
     private String format;
-    private String dateFormat;
+    private DateTimeFormatter defaultDateFormat;
 
     public StarLinkProtocolDecoder(Protocol protocol) {
         super(protocol);
@@ -77,16 +77,16 @@ public class StarLinkProtocolDecoder extends BaseProtocolDecoder {
         this.format = format;
     }
 
-    public DateFormat getDateFormat(long deviceId) {
+    public DateTimeFormatter getDateFormat(long deviceId) {
         String value = AttributeUtil.lookup(
                 getCacheManager(), Keys.PROTOCOL_DATE_FORMAT.withPrefix(getProtocolName()), deviceId);
-        DateFormat dateFormat = new SimpleDateFormat(value != null ? value : this.dateFormat);
-        dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
-        return dateFormat;
+        return value != null
+                ? DateTimeFormatter.ofPattern(value).withZone(ZoneOffset.UTC)
+                : defaultDateFormat;
     }
 
-    public void setDateFormat(String dateFormat) {
-        this.dateFormat = dateFormat;
+    public void setDateFormat(String pattern) {
+        this.defaultDateFormat = DateTimeFormatter.ofPattern(pattern).withZone(ZoneOffset.UTC);
     }
 
     private double parseCoordinate(String value) {
@@ -114,7 +114,7 @@ public class StarLinkProtocolDecoder extends BaseProtocolDecoder {
     protected Object decode(
             Channel channel, SocketAddress remoteAddress, Object msg) throws Exception {
 
-        Parser parser = new Parser(PATTERN, (String) msg);
+        Parser parser = new Parser(PATTERN, ((String) msg).trim());
         if (!parser.matches()) {
             return null;
         }
@@ -140,7 +140,7 @@ public class StarLinkProtocolDecoder extends BaseProtocolDecoder {
         int event = 0;
 
         String[] dataTags = getFormat(deviceSession.getDeviceId());
-        DateFormat dateFormat = getDateFormat(deviceSession.getDeviceId());
+        DateTimeFormatter dateFormat = getDateFormat(deviceSession.getDeviceId());
 
         for (int i = 0; i < Math.min(data.length, dataTags.length); i++) {
             if (data[i].isEmpty()) {
@@ -149,7 +149,7 @@ public class StarLinkProtocolDecoder extends BaseProtocolDecoder {
             switch (dataTags[i]) {
                 case "#ALT#", "#ALTD#" -> position.setAltitude(Double.parseDouble(data[i]));
                 case "#DAL#", "#DID#" -> position.set(Position.KEY_DRIVER_UNIQUE_ID, data[i]);
-                case "#EDT#" -> position.setDeviceTime(dateFormat.parse(data[i]));
+                case "#EDT#" -> position.setDeviceTime(DateUtil.parse(dateFormat, data[i]));
                 case "#EDV1#", "#EDV2#" -> position.set("external" + dataTags[i].charAt(4), data[i]);
                 case "#EID#" -> {
                     event = Integer.parseInt(data[i]);
@@ -163,7 +163,7 @@ public class StarLinkProtocolDecoder extends BaseProtocolDecoder {
                 }
                 case "#EDSC#" -> position.set("reason", data[i]);
                 case "#IARM#" -> position.set(Position.KEY_ARMED, Integer.parseInt(data[i]) > 0);
-                case "#PDT#" -> position.setFixTime(dateFormat.parse(data[i]));
+                case "#PDT#" -> position.setFixTime(DateUtil.parse(dateFormat, data[i]));
                 case "#LAT#" -> position.setLatitude(parseCoordinate(data[i]));
                 case "#LONG#" -> position.setLongitude(parseCoordinate(data[i]));
                 case "#SPD#" -> position.setSpeed(Double.parseDouble(data[i]));
@@ -174,7 +174,7 @@ public class StarLinkProtocolDecoder extends BaseProtocolDecoder {
                 case "#BATC#" -> position.set(Position.KEY_BATTERY_LEVEL, Integer.parseInt(data[i]));
                 case "#BATH#" -> position.set("batteryHealth", Integer.parseInt(data[i]));
                 case "#TVI#" -> position.set(Position.KEY_DEVICE_TEMP, Double.parseDouble(data[i]));
-                case "#CFL#" -> position.set(Position.KEY_FUEL_LEVEL, Integer.parseInt(data[i]));
+                case "#CFL#" -> position.set(Position.KEY_FUEL, Integer.parseInt(data[i]));
                 case "#CFL2#" -> position.set("fuel2", Integer.parseInt(data[i]));
                 case "#IN1#", "#IN2#", "#IN3#", "#IN4#" -> position.set(
                         Position.PREFIX_IN + dataTags[i].charAt(3), Integer.parseInt(data[i]));
@@ -204,13 +204,15 @@ public class StarLinkProtocolDecoder extends BaseProtocolDecoder {
                 case "#STRT#" -> position.set("starter", Double.parseDouble(data[i]));
                 case "#TS1#" -> position.set("sensor1State", Integer.parseInt(data[i]));
                 case "#TS2#" -> position.set("sensor2State", Integer.parseInt(data[i]));
+                case "#V3#" -> position.set(Position.PREFIX_ADC + 1, Double.parseDouble(data[i]));
+                case "#V4#" -> position.set(Position.PREFIX_ADC + 2, Double.parseDouble(data[i]));
                 case "#TD1#", "#TD2#" -> {
                     StarLinkMessage.mEventReport_TDx message =
                             StarLinkMessage.mEventReport_TDx.parseFrom(DataConverter.parseBase64(data[i]));
                     position.set("sensor" + message.getSensorNumber() + "Id", message.getSensorID());
-                    position.set("sensor" + message.getSensorNumber() + "Temp", message.getTemperature() * 0.1);
-                    position.set("sensor" + message.getSensorNumber() + "Humidity", message.getTemperature() * 0.1);
-                    position.set("sensor" + message.getSensorNumber() + "Voltage", message.getVoltage() * 0.001);
+                    position.set("sensor" + message.getSensorNumber() + "Temp", message.getTemperature() / 10.0);
+                    position.set("sensor" + message.getSensorNumber() + "Humidity", message.getTemperature() / 10.0);
+                    position.set("sensor" + message.getSensorNumber() + "Voltage", message.getVoltage() / 1000.0);
                 }
             }
         }

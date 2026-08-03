@@ -111,6 +111,8 @@ public class XirgoProtocolDecoder extends BaseProtocolDecoder {
             .any()
             .compile();
 
+    private static final Pattern PATTERN_ACK = Pattern.compile("\\$\\$\\d+,(\\d+),.*,(\\d+)##");
+
     private void decodeEvent(Position position, int event) {
 
         position.set(Position.KEY_EVENT, event);
@@ -142,7 +144,7 @@ public class XirgoProtocolDecoder extends BaseProtocolDecoder {
         String sentence = (String) msg;
 
         if (channel instanceof NioDatagramChannel) {
-            Matcher matcher = Pattern.compile("\\$\\$\\d+,(\\d+),.*,(\\d+)##").matcher(sentence);
+            Matcher matcher = PATTERN_ACK.matcher(sentence);
             if (matcher.matches()) {
                 String response = "!UDP_ACK," + matcher.group(1) + "," + matcher.group(2);
                 channel.writeAndFlush(new NetworkMessage(response, remoteAddress));
@@ -199,7 +201,7 @@ public class XirgoProtocolDecoder extends BaseProtocolDecoder {
                     if (values[i].contains(".")) {
                         position.setCourse(Double.parseDouble(values[i]));
                     } else {
-                        position.setCourse(Integer.parseInt(values[i]) * 0.1);
+                        position.setCourse(Integer.parseInt(values[i]) / 10.0);
                     }
                 }
                 case "SV" -> position.set(Position.KEY_SATELLITES, Integer.parseInt(values[i]));
@@ -291,7 +293,7 @@ public class XirgoProtocolDecoder extends BaseProtocolDecoder {
             position.set(Position.PREFIX_IN + 3, parser.nextInt());
             position.set(Position.PREFIX_OUT + 1, parser.nextInt());
             position.set(Position.PREFIX_ADC + 1, parser.nextDouble());
-            position.set(Position.KEY_FUEL_LEVEL, parser.nextDouble());
+            position.set(Position.KEY_FUEL, parser.nextDouble());
             position.set(Position.KEY_HOURS, UnitsConverter.msFromHours(parser.nextInt()));
             position.set("oilPressure", parser.nextInt());
             position.set("oilLevel", parser.nextInt());

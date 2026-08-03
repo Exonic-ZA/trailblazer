@@ -22,8 +22,7 @@ import java.util.Map;
 
 public final class ObdDecoder {
 
-    private ObdDecoder() {
-    }
+    private ObdDecoder() {}
 
     private static final int MODE_CURRENT = 0x01;
     private static final int MODE_FREEZE_FRAME = 0x02;
@@ -76,7 +75,7 @@ public final class ObdDecoder {
             case 0x0F -> createEntry("intakeTemp", convert ? value - 40 : value);
             case 0x11 -> createEntry(Position.KEY_THROTTLE, convert ? value * 100 / 255 : value);
             case 0x21 -> createEntry("milDistance", value);
-            case 0x2F -> createEntry(Position.KEY_FUEL_LEVEL, convert ? value * 100 / 255 : value);
+            case 0x2F -> createEntry(Position.KEY_FUEL, convert ? value * 100 / 255 : value);
             case 0x31 -> createEntry("clearedDistance", value);
             default -> null;
         };

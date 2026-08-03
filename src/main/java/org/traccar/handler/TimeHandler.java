@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 - 2024 Anton Tananaev (anton@traccar.org)
+ * Copyright 2019 - 2025 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,40 +18,75 @@ package org.traccar.handler;
 import jakarta.inject.Inject;
 import org.traccar.config.Config;
 import org.traccar.config.Keys;
+import org.traccar.helper.model.AttributeUtil;
 import org.traccar.model.Position;
+import org.traccar.session.cache.CacheManager;
 
+import java.time.Duration;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
 
 public class TimeHandler extends BasePositionHandler {
 
-    private final boolean useServerTime;
-    private final Set<String> protocols;
+    private static final long ROLLOVER_CYCLE = 1024 * Duration.ofDays(7).toMillis();
+    private static final long ROLLOVER_THRESHOLD = ROLLOVER_CYCLE - Duration.ofDays(90).toMillis();
+
+    private final CacheManager cacheManager;
+    private final Set<String> overrideProtocols;
 
     @Inject
-    public TimeHandler(Config config) {
-        useServerTime = config.getString(Keys.TIME_OVERRIDE).equalsIgnoreCase("serverTime");
+    public TimeHandler(Config config, CacheManager cacheManager) {
+
+        this.cacheManager = cacheManager;
         String protocolList = config.getString(Keys.TIME_PROTOCOLS);
         if (protocolList != null) {
-            protocols = new HashSet<>(Arrays.asList(protocolList.split("[, ]")));
+            overrideProtocols = new HashSet<>(Arrays.asList(protocolList.split("[, ]")));
         } else {
-            protocols = null;
+            overrideProtocols = null;
         }
     }
 
     @Override
     public void onPosition(Position position, Callback callback) {
+        handleRollover(position);
+        handleOverride(position);
+        callback.processed(false);
+    }
 
-        if (protocols == null || protocols.contains(position.getProtocol())) {
-            if (useServerTime) {
+    private void handleRollover(Position position) {
+        long currentTime = System.currentTimeMillis();
+        position.setDeviceTime(adjustRollover(currentTime, position.getDeviceTime()));
+        position.setFixTime(adjustRollover(currentTime, position.getFixTime()));
+    }
+
+    public static Date adjustRollover(long currentTime, Date time) {
+        long positionTime = time.getTime();
+        while (positionTime > OutdatedHandler.GPS_EPOCH && currentTime - positionTime > ROLLOVER_THRESHOLD) {
+            positionTime += ROLLOVER_CYCLE;
+        }
+        return positionTime == time.getTime() ? time : new Date(positionTime);
+    }
+
+    private void handleOverride(Position position) {
+        String overrideType = AttributeUtil.lookup(cacheManager, Keys.TIME_OVERRIDE, position.getDeviceId());
+        if (overrideType == null) {
+            return;
+        }
+        if (overrideProtocols != null && !overrideProtocols.contains(position.getProtocol())) {
+            return;
+        }
+        switch (overrideType) {
+            case "serverTime":
                 position.setDeviceTime(position.getServerTime());
                 position.setFixTime(position.getServerTime());
-            } else {
+                break;
+            case "deviceTime":
+            default:
                 position.setFixTime(position.getDeviceTime());
-            }
+                break;
         }
-        callback.processed(false);
     }
 
 }

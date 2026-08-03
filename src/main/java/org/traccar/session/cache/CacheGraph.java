@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Anton Tananaev (anton@traccar.org)
+ * Copyright 2023 - 2026 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,19 @@
  */
 package org.traccar.session.cache;
 
+import org.traccar.helper.ConcurrentWeakValueMap;
 import org.traccar.model.BaseModel;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 public class CacheGraph {
 
-    private final Map<CacheKey, CacheNode> roots = new HashMap<>();
-    private final WeakValueMap<CacheKey, CacheNode> nodes = new WeakValueMap<>();
+    private final Map<CacheKey, CacheNode> roots = new ConcurrentHashMap<>();
+    private final ConcurrentWeakValueMap<CacheKey, CacheNode> nodes = new ConcurrentWeakValueMap<>();
 
     void addObject(BaseModel value) {
         CacheKey key = new CacheKey(value);
@@ -38,7 +40,7 @@ public class CacheGraph {
         CacheKey key = new CacheKey(clazz, id);
         CacheNode node = nodes.remove(key);
         if (node != null) {
-            node.getAllLinks(false).forEach(child -> child.getLinks(key.clazz(), true).remove(node));
+            node.getAllLinks(true).forEach(child -> child.removeLink(key.clazz(), false, node));
         }
         roots.remove(key);
     }
@@ -69,11 +71,11 @@ public class CacheGraph {
             return Stream.empty();
         }
 
-        var directSteam = rootNode.getLinks(clazz, forward).stream()
+        var directSteam = rootNode.linkStream(clazz, forward)
                 .map(node -> (T) node.getValue());
 
         var proxyStream = proxies.stream()
-                .flatMap(proxyClass -> rootNode.getLinks(proxyClass, forward).stream()
+                .flatMap(proxyClass -> rootNode.linkStream(proxyClass, forward)
                         .flatMap(node -> getObjectStream(node, clazz, proxies, forward)));
 
         return Stream.concat(directSteam, proxyStream);
@@ -88,19 +90,20 @@ public class CacheGraph {
 
     boolean addLink(
             Class<? extends BaseModel> fromClazz, long fromId,
-            BaseModel toValue) {
+            Class<? extends BaseModel> toClazz, long toId,
+            Supplier<? extends BaseModel> objectSupplier) {
         boolean stop = true;
         CacheNode fromNode = nodes.get(new CacheKey(fromClazz, fromId));
         if (fromNode != null) {
-            CacheKey toKey = new CacheKey(toValue);
+            CacheKey toKey = new CacheKey(toClazz, toId);
             CacheNode toNode = nodes.get(toKey);
             if (toNode == null) {
                 stop = false;
-                toNode = new CacheNode(toValue);
+                toNode = new CacheNode(objectSupplier.get());
                 nodes.put(toKey, toNode);
             }
-            fromNode.getLinks(toValue.getClass(), true).add(toNode);
-            toNode.getLinks(fromClazz, false).add(fromNode);
+            fromNode.addLink(toClazz, true, toNode);
+            toNode.addLink(fromClazz, false, fromNode);
         }
         return stop;
     }
@@ -112,8 +115,8 @@ public class CacheGraph {
         if (fromNode != null) {
             CacheNode toNode = nodes.get(new CacheKey(toClazz, toId));
             if (toNode != null) {
-                fromNode.getLinks(toClazz, true).remove(toNode);
-                toNode.getLinks(fromClazz, false).remove(fromNode);
+                fromNode.removeLink(toClazz, true, toNode);
+                toNode.removeLink(fromClazz, false, fromNode);
             }
         }
     }

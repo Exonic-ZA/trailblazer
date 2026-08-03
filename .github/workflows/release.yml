@@ -1,64 +1,141 @@
-name: Build Installers
+name: Build Release
+
+# Forked from upstream Traccar's release workflow. Differences from upstream:
+#  - the web UI comes from the trailblazer-web submodule, not traccar/traccar-web
+#  - the server is built on JDK 21 to match the JRE 21 runtime in
+#    containerisation/Dockerfile (upstream builds on 25 and ships a jlink runtime)
+#  - only the "other" zip is produced; it is what the ECR image consumes
+#  - artifacts are published to our own S3 bucket under builds/$DEPLOY_ENV/,
+#    keyed off the branch, instead of the upstream DigitalOcean space
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version'
+        description: Version
         required: true
-        default: 'preview'
+        default: preview
+      environment:
+        description: Target environment (defaults to the branch name)
+        required: false
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
-
+  build-server:
+    name: Build server
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          submodules: true
-      - run: git checkout ${{ github.ref_name }}
-        working-directory: ./trailblazer-web
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
           cache: gradle
-      - run: ./gradlew build
-      - uses: actions/setup-node@v4
+      - run: ./gradlew assemble
+      - name: Stage server payload
+        run: |
+          mkdir -p out/{conf,lib,schema,templates}
+          cp target/tracker-server.jar out/
+          cp target/lib/* out/lib/
+          cp schema/* out/schema/
+          cp -r templates/* out/templates/
+          cp setup/traccar.xml out/conf/
+      - uses: actions/upload-artifact@v7
         with:
-          node-version: 21
+          name: staged-server
+          path: out
+          retention-days: 1
+
+  build-web:
+    name: Build web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
           cache: npm
           cache-dependency-path: trailblazer-web/package-lock.json
       - run: npm ci && npm run build
         working-directory: ./trailblazer-web
-      - run: |
-          sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo apt-get install libgcc-s1:i386 libstdc++6:i386
-          sudo apt-get install innoextract makeself wine32 s3cmd
-      - name: Build installers
-        working-directory: ./setup
+      - name: Stage web payload
+        working-directory: ./trailblazer-web
         run: |
-          wget -q http://files.jrsoftware.org/is/5/isetup-5.5.6.exe
-          wget -q https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4+7/OpenJDK21U-jdk_x64_windows_hotspot_21.0.4_7.zip
-          wget -q https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4+7/OpenJDK21U-jdk_x64_linux_hotspot_21.0.4_7.tar.gz
-          wget -q https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4+7/OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.4_7.tar.gz
-          ./package.sh ${{ github.event.inputs.version }}
-      - name: Set environment variable
-        run: echo "DEPLOY_ENV=${{ github.event.inputs.environment || github.ref_name }}" >> $GITHUB_ENV
+          mkdir -p ../out/web ../out/templates/translations
+          cp -r build/* ../out/web/
+          cp -r src/resources/l10n/* ../out/templates/translations/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: staged-web
+          path: out
+          retention-days: 1
+
+  build-other:
+    name: Build other zip
+    needs: [build-server, build-web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
+        with:
+          name: staged-server
+          path: setup/out
+      - uses: actions/download-artifact@v8
+        with:
+          name: staged-web
+          path: setup/out
+      - name: Build zip
+        working-directory: setup
+        run: |
+          mkdir -p out/data out/logs
+          cp README.txt out/
+          (cd out && zip -q -r "../traccar-other-${{ github.event.inputs.version }}.zip" .)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installers-other
+          path: setup/traccar-other-*.zip
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    name: Publish to S3
+    needs: [build-other]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: installers-*
+          merge-multiple: true
+      - name: Derive environment
+        run: |
+          DEPLOY_ENV="${{ github.event.inputs.environment }}"
+          if [ -z "$DEPLOY_ENV" ]; then
+            case "${{ github.ref_name }}" in
+              main|master) DEPLOY_ENV=prod ;;
+              develop)     DEPLOY_ENV=develop ;;
+              staging)     DEPLOY_ENV=staging ;;
+              *) echo "Cannot derive environment from branch ${{ github.ref_name }}" && exit 1 ;;
+            esac
+          fi
+          echo "DEPLOY_ENV=$DEPLOY_ENV" >> $GITHUB_ENV
       - name: Upload installers
-        working-directory: ./setup
         env:
           S3_ACCESS_KEY: ${{ secrets.S3_ACCESS_KEY }}
           S3_SECRET_KEY: ${{ secrets.S3_SECRET_KEY }}
           S3_HOST: ${{ secrets.S3_HOST }}
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
-          DEPLOY_ENV: ${{ env.DEPLOY_ENV }}
         run: |
+          sudo apt-get install -y s3cmd
           echo "Uploading to s3://$S3_BUCKET/builds/$DEPLOY_ENV/"
-          s3cmd put traccar-*.zip s3://$S3_BUCKET/builds/$DEPLOY_ENV/ \
+          s3cmd put traccar-*.zip "s3://$S3_BUCKET/builds/$DEPLOY_ENV/" \
             --host="$S3_HOST" \
             --host-bucket="$S3_BUCKET" \
             --access_key="$S3_ACCESS_KEY" \
-            --secret_key="$S3_SECRET_KEY" || exit 1
+            --secret_key="$S3_SECRET_KEY"

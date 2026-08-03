@@ -53,9 +53,6 @@ public class Device extends GroupedModel implements Disableable, Schedulable {
     }
 
     public void setUniqueId(String uniqueId) {
-        if (uniqueId.contains("..")) {
-            throw new IllegalArgumentException("Invalid unique id");
-        }
         this.uniqueId = uniqueId.trim();
     }
 
@@ -186,6 +183,19 @@ public class Device extends GroupedModel implements Disableable, Schedulable {
         this.motionState = motionState;
     }
 
+    private long motionPositionId;
+
+    @QueryIgnore
+    @JsonIgnore
+    public long getMotionPositionId() {
+        return motionPositionId;
+    }
+
+    @JsonIgnore
+    public void setMotionPositionId(long motionPositionId) {
+        this.motionPositionId = motionPositionId;
+    }
+
     private Date motionTime;
 
     @QueryIgnore
@@ -210,6 +220,32 @@ public class Device extends GroupedModel implements Disableable, Schedulable {
     @JsonIgnore
     public void setMotionDistance(double motionDistance) {
         this.motionDistance = motionDistance;
+    }
+
+    private double motionLatitude;
+
+    @QueryIgnore
+    @JsonIgnore
+    public double getMotionLatitude() {
+        return motionLatitude;
+    }
+
+    @JsonIgnore
+    public void setMotionLatitude(double motionLatitude) {
+        this.motionLatitude = motionLatitude;
+    }
+
+    private double motionLongitude;
+
+    @QueryIgnore
+    @JsonIgnore
+    public double getMotionLongitude() {
+        return motionLongitude;
+    }
+
+    @JsonIgnore
+    public void setMotionLongitude(double motionLongitude) {
+        this.motionLongitude = motionLongitude;
     }
 
     private boolean overspeedState;
