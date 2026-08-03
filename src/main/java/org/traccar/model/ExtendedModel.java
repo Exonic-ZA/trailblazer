@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 - 2022 Anton Tananaev (anton@traccar.org)
+ * Copyright 2016 - 2026 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,13 +15,14 @@
  */
 package org.traccar.model;
 
-import java.util.LinkedHashMap;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+
 import java.util.Map;
-import java.util.Objects;
 
 public class ExtendedModel extends BaseModel {
 
-    private Map<String, Object> attributes = new LinkedHashMap<>();
+    @JsonDeserialize(as = AttributeMap.class)
+    private AttributeMap attributes = new AttributeMap();
 
     public boolean hasAttribute(String key) {
         return attributes.containsKey(key);
@@ -31,8 +32,8 @@ public class ExtendedModel extends BaseModel {
         return attributes;
     }
 
-    public void setAttributes(Map<String, Object> attributes) {
-        this.attributes = Objects.requireNonNullElseGet(attributes, LinkedHashMap::new);
+    public void setAttributes(AttributeMap attributes) {
+        this.attributes = attributes != null ? attributes : new AttributeMap();
     }
 
     public void set(String key, Boolean value) {
@@ -90,68 +91,106 @@ public class ExtendedModel extends BaseModel {
     }
 
     public String getString(String key, String defaultValue) {
-        if (attributes.containsKey(key)) {
-            Object value = attributes.get(key);
-            return value != null ? value.toString() : null;
-        } else {
-            return defaultValue;
-        }
+        return parseAsString(attributes.get(key), defaultValue);
     }
 
     public String getString(String key) {
-        return getString(key, null);
+        return parseAsString(attributes.get(key), null);
+    }
+
+    public double getDouble(String key, double defaultValue) {
+        return parseAsDouble(attributes.get(key), defaultValue);
     }
 
     public double getDouble(String key) {
-        if (attributes.containsKey(key)) {
-            Object value = attributes.get(key);
-            if (value instanceof Number numberValue) {
-                return numberValue.doubleValue();
-            } else {
-                return Double.parseDouble(value.toString());
-            }
-        } else {
-            return 0.0;
-        }
+        return parseAsDouble(attributes.get(key), 0.0);
     }
 
     public boolean getBoolean(String key) {
-        if (attributes.containsKey(key)) {
-            Object value = attributes.get(key);
-            if (value instanceof Boolean booleanValue) {
-                return booleanValue;
-            } else {
-                return Boolean.parseBoolean(value.toString());
-            }
-        } else {
-            return false;
-        }
+        return parseAsBoolean(attributes.get(key), false);
+    }
+
+    public int getInteger(String key, int defaultValue) {
+        return parseAsInteger(attributes.get(key), defaultValue);
     }
 
     public int getInteger(String key) {
-        if (attributes.containsKey(key)) {
-            Object value = attributes.get(key);
-            if (value instanceof Number numberValue) {
-                return numberValue.intValue();
-            } else {
-                return Integer.parseInt(value.toString());
-            }
-        } else {
-            return 0;
-        }
+        return parseAsInteger(attributes.get(key), 0);
     }
 
     public long getLong(String key) {
-        if (attributes.containsKey(key)) {
-            Object value = attributes.get(key);
-            if (value instanceof Number numberValue) {
-                return numberValue.longValue();
-            } else {
-                return Long.parseLong(value.toString());
-            }
+        return parseAsLong(attributes.get(key), 0L);
+    }
+
+    public Object removeAttribute(String key) {
+        return attributes.remove(key);
+    }
+
+    public String removeString(String key) {
+        return parseAsString(attributes.remove(key), null);
+    }
+
+    public Double removeDouble(String key) {
+        return parseAsDouble(attributes.remove(key), null);
+    }
+
+    public Boolean removeBoolean(String key) {
+        return parseAsBoolean(attributes.remove(key), null);
+    }
+
+    public Integer removeInteger(String key) {
+        return parseAsInteger(attributes.remove(key), null);
+    }
+
+    public Long removeLong(String key) {
+        return parseAsLong(attributes.remove(key), null);
+    }
+
+    private String parseAsString(Object value, String defaultValue) {
+        if (value == null) {
+            return defaultValue;
         } else {
-            return 0;
+            return value.toString();
         }
     }
 
+    private static Double parseAsDouble(Object value, Double defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        } else if (value instanceof Number numberValue) {
+            return numberValue.doubleValue();
+        } else {
+            return Double.parseDouble(value.toString());
+        }
+    }
+
+    private static Boolean parseAsBoolean(Object value, Boolean defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        } else if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        } else {
+            return Boolean.parseBoolean(value.toString());
+        }
+    }
+
+    private static Integer parseAsInteger(Object value, Integer defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        } else if (value instanceof Number numberValue) {
+            return numberValue.intValue();
+        } else {
+            return Integer.parseInt(value.toString());
+        }
+    }
+
+    private static Long parseAsLong(Object value, Long defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        } else if (value instanceof Number numberValue) {
+            return numberValue.longValue();
+        } else {
+            return Long.parseLong(value.toString());
+        }
+    }
 }

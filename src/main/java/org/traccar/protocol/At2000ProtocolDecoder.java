@@ -138,9 +138,9 @@ public class At2000ProtocolDecoder extends BaseProtocolDecoder {
                     buf.readUnsignedShortLE(); // operator
 
                     position.set(Position.PREFIX_ADC + 1, buf.readUnsignedShortLE());
-                    position.set(Position.PREFIX_ADC + 1, buf.readUnsignedShortLE());
+                    position.set(Position.PREFIX_ADC + 2, buf.readUnsignedShortLE());
 
-                    position.set(Position.KEY_POWER, buf.readUnsignedShortLE() * 0.001);
+                    position.set(Position.KEY_POWER, buf.readUnsignedShortLE() / 1000.0);
 
                     buf.readUnsignedShortLE(); // cid
                     position.set(Position.KEY_RSSI, buf.readUnsignedByte());

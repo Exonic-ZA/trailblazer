@@ -1,6 +1,32 @@
 <?xml version="1.1" encoding="UTF-8" standalone="no"?>
-<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:ext="http://www.liquibase.org/xml/ns/dbchangelog-ext" xmlns:pro="http://www.liquibase.org/xml/ns/pro" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog-ext http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-ext.xsd http://www.liquibase.org/xml/ns/pro http://www.liquibase.org/xml/ns/pro/liquibase-pro-latest.xsd http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+<!--
+  Image feature schema.
+
+  logicalFilePath is REQUIRED and must not change. Liquibase identifies a
+  changeSet by (id, author, filename). Under Liquibase 4.23.2 this file was
+  recorded in DATABASECHANGELOG as "schema/changelog-6.6-images-1.0.xml", but
+  Liquibase 5.0.3 (Traccar 6.14.x) resolves the same include to
+  "changelog-6.6-images-1.0.xml". Without pinning logicalFilePath the changesets
+  look new, Liquibase re-runs them, and the server crash-loops on
+  "relation tc_images already exists". Upstream Traccar pins logicalFilePath on
+  28 of its 30 changelogs for exactly this reason.
+
+  The preconditions are a second line of defence for any environment where the
+  tables exist but were never recorded. onFail="MARK_RAN" records them instead
+  of executing. validCheckSum=ANY is needed because adding those guards changes
+  each changeSet checksum, which would otherwise fail validation on databases
+  that recorded the original version.
+
+  Do not rename this file or alter logicalFilePath.
+-->
+<databaseChangeLog logicalFilePath="schema/changelog-6.6-images-1.0.xml" xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:ext="http://www.liquibase.org/xml/ns/dbchangelog-ext" xmlns:pro="http://www.liquibase.org/xml/ns/pro" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog-ext http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-ext.xsd http://www.liquibase.org/xml/ns/pro http://www.liquibase.org/xml/ns/pro/liquibase-pro-latest.xsd http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
     <changeSet author="darry (generated)" id="1737552682601-1">
+        <validCheckSum>ANY</validCheckSum>
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="tc_images"/>
+            </not>
+        </preConditions>
         <createTable tableName="tc_images">
             <column autoIncrement="true" name="id" type="INTEGER">
                 <constraints nullable="false" primaryKey="true" primaryKeyName="tc_iamges_pkey"/>
@@ -24,6 +50,12 @@
         </createTable>
     </changeSet>
     <changeSet author="darry (generated)" id="1737552682601-2">
+        <validCheckSum>ANY</validCheckSum>
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="tc_user_image"/>
+            </not>
+        </preConditions>
         <createTable tableName="tc_user_image">
             <column name="userid" type="INTEGER">
                 <constraints nullable="false"/>
@@ -34,14 +66,32 @@
         </createTable>
     </changeSet>
     <changeSet author="darry (generated)" id="1737552682601-3">
+        <validCheckSum>ANY</validCheckSum>
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <indexExists indexName="user_image_user_id" tableName="tc_user_image"/>
+            </not>
+        </preConditions>
         <createIndex indexName="user_image_user_id" tableName="tc_user_image">
             <column name="userid"/>
         </createIndex>
     </changeSet>
     <changeSet author="darry (generated)" id="1737552682601-4">
+        <validCheckSum>ANY</validCheckSum>
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <foreignKeyConstraintExists foreignKeyName="fk_user_image_imageid" foreignKeyTableName="tc_user_image"/>
+            </not>
+        </preConditions>
         <addForeignKeyConstraint baseColumnNames="imageid" baseTableName="tc_user_image" constraintName="fk_user_image_imageid" deferrable="false" initiallyDeferred="false" onDelete="CASCADE" onUpdate="NO ACTION" referencedColumnNames="id" referencedTableName="tc_images" validate="true"/>
     </changeSet>
     <changeSet author="darry (generated)" id="1737552682601-5">
+        <validCheckSum>ANY</validCheckSum>
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <foreignKeyConstraintExists foreignKeyName="fk_user_image_userid" foreignKeyTableName="tc_user_image"/>
+            </not>
+        </preConditions>
         <addForeignKeyConstraint baseColumnNames="userid" baseTableName="tc_user_image" constraintName="fk_user_image_userid" deferrable="false" initiallyDeferred="false" onDelete="CASCADE" onUpdate="NO ACTION" referencedColumnNames="id" referencedTableName="tc_users" validate="true"/>
     </changeSet>
 </databaseChangeLog>

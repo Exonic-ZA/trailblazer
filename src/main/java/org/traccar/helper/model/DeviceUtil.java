@@ -32,8 +32,7 @@ import java.util.stream.Collectors;
 
 public final class DeviceUtil {
 
-    private DeviceUtil() {
-    }
+    private DeviceUtil() {}
 
     public static void resetStatus(Storage storage) throws StorageException {
         storage.updateObject(new Device(), new Request(new Columns.Include("status")));
@@ -47,6 +46,11 @@ public final class DeviceUtil {
         var devices = storage.getObjects(Device.class, new Request(
                 new Columns.All(),
                 new Condition.Permission(User.class, userId, Device.class)));
+
+        if (deviceIds.isEmpty() && groupIds.isEmpty()) {
+            return devices;
+        }
+
         var deviceById = devices.stream()
                 .collect(Collectors.toUnmodifiableMap(Device::getId, x -> x));
         var devicesByGroup = devices.stream()

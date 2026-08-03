@@ -11,11 +11,16 @@ public class StarLinkProtocolDecoderTest extends ProtocolTest {
 
         var decoder = inject(new StarLinkProtocolDecoder(null));
 
+        decoder.setFormat("#EDT#,#EID#,#PDT#,#LAT#,#LONG#,#SPD#,#HEAD#,#ODO#,#ALT#,#SATU#,#CSS#,#IGN#,#VIN#,#VBAT#,#TV1#,#TS1#,#TV2#,#TS2#,#TV3#,#TS3#,#TV4#,#TS4#,#V4#");
+
+        verifyPosition(decoder, text(
+                "$SLU354338101064638,06,13875,250301003539,01,250228235002,+1436.0590,-09030.6841,000.0,232,048789,1401,6,64,0,13.071,04.198,,0,,0,,0,,0,,0,2*2A "));
+
         decoder.setFormat("#IMEI#,#EDT#,#PDT#,#LAT#,#LONG#,#SPD#,#IGN#,#ODO#,#DUR#,#TDUR#,#LAC#,#CID#,#VIN#,#VBAT#,#EID#,#EDSC#,#DRV#,#SATU#,#CSS#,#OUT1#,#OUT2#,#CFL#");
 
         verifyAttribute(decoder, text(
                 "$SLU0AF334,06,14260,352353088342073,210322083942,210322083940,+0937.2191,+04151.8206,000.0,0,006782,,30707,14010,11685,12.994,04.159,01,Location,0,20,64,0,0,12,0,2*7F"),
-                Position.KEY_FUEL_LEVEL, 12);
+                Position.KEY_FUEL, 12);
 
         decoder.setFormat("#IMEI#,#EDT#,#EDSC#,#EID#,#PDT#,#LAT#,#LONG#,#SPDK#,#IGNL#,#HEAD#,#ODO#,#DUR#,#TDUR#,#VIN#,#VBAT#,#BATC#,#SATU#,#CSS#,#IN2#,#TVI#,#OUT1#,#OUT2#,#OUT3#,#OUTC#");
 
@@ -32,7 +37,7 @@ public class StarLinkProtocolDecoderTest extends ProtocolTest {
 
         verifyAttribute(decoder, text(
                 "$SLU351580050356894,06,1192,200811104100,01,200811104058,+4121.8168,+00205.1158,000.0,069,000069,2080,15139043,12.221,03.533,D469062D44D6,1,29.7,56.9,CAEaBtRpBi1E1jhLSJoYKLkEINIEWABgAmgAcAJ4AIABAIgBAA==,Location,D2567108639E,1,30.2,55.3,CAIaBtJWcQhjnjhPSPIXKKkEINwEWEpgA2gAcAJ4AIABAIgBAA==,1,99*5A"),
-                "sensor2Voltage", 3058 * 0.001);
+                "sensor2Voltage", 3058 / 1000.0);
 
         decoder.setFormat("#IMEI#,#EDT#,#PDT#,#LAT#,#LONG#,#SPD#,#IGN#,#ODO#,#DUR#,#TDUR#,#LAC#,#CID#,#VIN#,#VBAT#,#EID#,#EDSC#,#DRV#,#SATU#,#CSS#,#OUT1#,#OUT2#");
 

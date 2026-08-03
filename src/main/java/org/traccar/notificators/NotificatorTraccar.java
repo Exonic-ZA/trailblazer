@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 - 2024 Anton Tananaev (anton@traccar.org)
+ * Copyright 2020 - 2026 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,17 +65,21 @@ public class NotificatorTraccar extends Notificator {
     }
 
     public static class Message {
+        @JsonProperty("type")
+        private String type;
         @JsonProperty("registration_ids")
         private String[] tokens;
         @JsonProperty("notification")
         private NotificationObject notification;
+        @JsonProperty("priority")
+        private boolean priority;
     }
 
     @Inject
     public NotificatorTraccar(
             Config config, NotificationFormatter notificationFormatter, Client client,
             Storage storage, CacheManager cacheManager) {
-        super(notificationFormatter, "short");
+        super(notificationFormatter);
         this.client = client;
         this.storage = storage;
         this.cacheManager = cacheManager;
@@ -88,16 +92,18 @@ public class NotificatorTraccar extends Notificator {
         if (user.hasAttribute("notificationTokens")) {
 
             NotificationObject item = new NotificationObject();
-            item.title = shortMessage.getSubject();
-            item.body = shortMessage.getBody();
+            item.title = shortMessage.subject();
+            item.body = shortMessage.digest();
             item.sound = "default";
 
             String[] tokenArray = user.getString("notificationTokens").split("[, ]");
             List<String> registrationTokens = new ArrayList<>(Arrays.asList(tokenArray));
 
             Message message = new Message();
+            message.type = "manager";
             message.tokens = user.getString("notificationTokens").split("[, ]");
             message.notification = item;
+            message.priority = shortMessage.priority();
 
             var request = client.target(url).request().header("Authorization", "key=" + key);
             try (Response result = request.post(Entity.json(message))) {
@@ -119,7 +125,7 @@ public class NotificatorTraccar extends Notificator {
                 if (!failedTokens.isEmpty()) {
                     registrationTokens.removeAll(failedTokens);
                     if (registrationTokens.isEmpty()) {
-                        user.getAttributes().remove("notificationTokens");
+                        user.removeAttribute("notificationTokens");
                     } else {
                         user.set("notificationTokens", String.join(",", registrationTokens));
                     }
@@ -129,7 +135,7 @@ public class NotificatorTraccar extends Notificator {
                     cacheManager.invalidateObject(true, User.class, user.getId(), ObjectOperation.UPDATE);
                 }
             } catch (Exception e) {
-                LOGGER.warn("Push error", e);
+                LOGGER.warn("Notification push error", e);
             }
         }
     }

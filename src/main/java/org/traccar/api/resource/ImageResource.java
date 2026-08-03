@@ -1,3 +1,18 @@
+/*
+ * Copyright 2025 Exonic (info@exonic.co.za)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.traccar.api.resource;
 
 import jakarta.inject.Inject;
@@ -14,20 +29,26 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.traccar.api.BaseObjectResource;
 import org.traccar.database.MediaManager;
+import org.traccar.helper.model.DeviceUtil;
+import org.traccar.model.Device;
 import org.traccar.model.Image;
 import org.traccar.model.User;
 import org.traccar.storage.StorageException;
 import org.traccar.storage.query.Columns;
 import org.traccar.storage.query.Condition;
+import org.traccar.storage.query.Order;
 import org.traccar.storage.query.Request;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
 @Path("images")
 @Produces(MediaType.APPLICATION_JSON)
@@ -55,57 +76,94 @@ public class ImageResource extends BaseObjectResource<Image> {
         };
     }
 
+    private Order newestFirst() {
+        return new Order("uploadedAt", true, 0);
+    }
+
+    private Condition uploadedWithin(Date from, Date to) {
+        if (from != null && to != null) {
+            return new Condition.Between("uploadedAt", from, to);
+        } else if (from != null) {
+            return new Condition.Compare("uploadedAt", ">=", from);
+        } else if (to != null) {
+            return new Condition.Compare("uploadedAt", "<=", to);
+        }
+        return null;
+    }
+
+    private void collect(Map<Long, Image> target, Collection<Image> images) {
+        for (Image image : images) {
+            target.put(image.getId(), image);
+        }
+    }
+
+    /**
+     * An Image is visible to a user when it is linked to them directly, or when they have access to
+     * the Device it was captured on. Device access already expands the Group hierarchy, which is what
+     * lets a manager see Images uploaded by users in their Groups.
+     */
     @GET
     public Collection<Image> get(
             @QueryParam("all") boolean all, @QueryParam("userId") long userId,
             @QueryParam("deviceId") List<Long> deviceIds,
-            @QueryParam("id") List<Long> imageIds) throws StorageException {
+            @QueryParam("groupId") List<Long> groupIds,
+            @QueryParam("id") List<Long> imageIds,
+            @QueryParam("from") Date from, @QueryParam("to") Date to) throws StorageException {
 
-        if (!deviceIds.isEmpty() || !imageIds.isEmpty()) {
+        Condition period = uploadedWithin(from, to);
 
-            List<Image> result = new LinkedList<>();
-            for (Long deviceId : deviceIds) {
-                result.addAll(storage.getObjects(Image.class, new Request(
-                        new Columns.All(),
-                        new Condition.And(
-                                new Condition.Equals("deviceId",  deviceId),
-                                new Condition.Permission(User.class, getUserId(), Image.class)))));
-            }
-            for (Long imageId : imageIds) {
-                result.addAll(storage.getObjects(Image.class, new Request(
-                        new Columns.All(),
-                        new Condition.And(
-                                new Condition.Equals("id", imageId),
-                                new Condition.Permission(User.class, getUserId(), Image.class)))));
-            }
-            return result;
-
-        } else {
-
-            var conditions = new LinkedList<Condition>();
-
-            if (all) {
-                if (permissionsService.notAdmin(getUserId())) {
-                    conditions.add(new Condition.Permission(User.class, getUserId(), baseClass));
-                }
-            } else {
-                if (userId == 0) {
-                    conditions.add(new Condition.Permission(User.class, getUserId(), baseClass));
-                } else {
-                    permissionsService.checkUser(getUserId(), userId);
-                    conditions.add(new Condition.Permission(User.class, userId, baseClass).excludeGroups());
-                }
-            }
-
-            return storage.getObjects(baseClass, new Request(
-                    new Columns.All(), Condition.merge(conditions)));
-
+        if (all && !permissionsService.notAdmin(getUserId())) {
+            return storage.getObjects(Image.class, new Request(
+                    new Columns.All(), period, newestFirst()));
         }
+
+        long ownerId = getUserId();
+        if (userId != 0) {
+            permissionsService.checkUser(getUserId(), userId);
+            ownerId = userId;
+        }
+
+        Map<Long, Image> result = new LinkedHashMap<>();
+
+        if (deviceIds.isEmpty() && groupIds.isEmpty()) {
+            var conditions = new LinkedList<Condition>();
+            conditions.add(new Condition.Permission(User.class, ownerId, Image.class));
+            if (period != null) {
+                conditions.add(period);
+            }
+            collect(result, storage.getObjects(Image.class, new Request(
+                    new Columns.All(), Condition.merge(conditions), newestFirst())));
+        }
+
+        for (Device device : DeviceUtil.getAccessibleDevices(storage, ownerId, deviceIds, groupIds)) {
+            var conditions = new LinkedList<Condition>();
+            conditions.add(new Condition.Equals("deviceId", device.getId()));
+            if (period != null) {
+                conditions.add(period);
+            }
+            collect(result, storage.getObjects(Image.class, new Request(
+                    new Columns.All(), Condition.merge(conditions), newestFirst())));
+        }
+
+        if (!imageIds.isEmpty()) {
+            result.keySet().retainAll(imageIds);
+        }
+
+        return result.values().stream()
+                .sorted(Comparator.comparing(
+                        Image::getUploadedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
     }
 
     @Override
     public Response add(Image entity) throws Exception {
         entity.setUploadedAt(new Date());
+        if (entity.getFileExtension() == null) {
+            // tc_images.fileextension is NOT NULL, but the extension is only known once
+            // content is uploaded. Store a placeholder so the two-step create-then-upload
+            // flow works without requiring clients to guess the value up front.
+            entity.setFileExtension("");
+        }
         return super.add(entity);
     }
 
@@ -117,11 +175,16 @@ public class ImageResource extends BaseObjectResource<Image> {
             @HeaderParam(HttpHeaders.CONTENT_TYPE) String type
     ) throws StorageException, IOException {
 
+        permissionsService.checkEdit(getUserId(), Image.class, false, false);
 
         Image image = storage.getObject(Image.class, new Request(
                 new Columns.All(),
                 new Condition.Equals("id", imageId)));
         if (image != null) {
+            if (!ImageAccess.allowed(storage, permissionsService, getUserId(), image)) {
+                throw new SecurityException("Image access denied");
+            }
+
             String name = image.getFileName();
             String extension = imageExtension(type);
 

@@ -1,9 +1,24 @@
+/*
+ * Copyright 2025 Exonic (info@exonic.co.za)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.traccar.api;
 
 import com.google.inject.Provider;
+import org.traccar.api.resource.ImageAccess;
 import org.traccar.api.security.PermissionsService;
 import org.traccar.database.StatisticsManager;
-import org.traccar.helper.Log;
 import org.traccar.helper.SessionHelper;
 import org.traccar.model.Image;
 import org.traccar.storage.Storage;
@@ -46,9 +61,9 @@ public class UploadsFilter implements Filter {
 
         HttpServletResponse httpResponse = (HttpServletResponse) response;
         try {
-            HttpSession session = ((HttpServletRequest) request).getSession(false);
             Long userId = null;
-            if (session != null) {
+            if (SessionHelper.isSessionOriginValid((HttpServletRequest) request)) {
+                HttpSession session = ((HttpServletRequest) request).getSession(false);
                 userId = (Long) session.getAttribute(SessionHelper.USER_ID_KEY);
                 if (userId != null) {
                     statisticsManager.registerRequest(userId);
@@ -61,11 +76,12 @@ public class UploadsFilter implements Filter {
 
             String path = ((HttpServletRequest) request).getPathInfo();
             String[] parts = path != null ? path.split("/") : null;
-            if (parts != null && parts.length >= 2) {
+            Long imageId = parts != null && parts.length >= 2 ? parseId(parts[1]) : null;
+            if (imageId != null) {
                 Image image = storage.getObject(Image.class, new Request(
-                        new Columns.All(), new Condition.Equals("id", Long.parseLong(parts[1]))));
-                if (image != null) {
-                    permissionsServiceProvider.get().checkPermission(Image.class, userId, image.getId());
+                        new Columns.All(), new Condition.Equals("id", imageId)));
+                if (image != null
+                        && ImageAccess.allowed(storage, permissionsServiceProvider.get(), userId, image)) {
                     chain.doFilter(request, response);
                     return;
                 }
@@ -74,7 +90,15 @@ public class UploadsFilter implements Filter {
             httpResponse.sendError(HttpServletResponse.SC_FORBIDDEN);
         } catch (SecurityException | StorageException e) {
             httpResponse.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            httpResponse.getWriter().println(Log.exceptionStack(e));
+            e.printStackTrace(httpResponse.getWriter());
+        }
+    }
+
+    private Long parseId(String value) {
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

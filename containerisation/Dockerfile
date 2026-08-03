@@ -16,7 +16,7 @@ WORKDIR /opt/traccar
 # Add necessary tools, install Java, and prepare the environment
 RUN set -ex; \
     apk add --no-cache --no-progress \
-      openjdk17-jre-headless \
+      openjdk21-jre-headless \
       wget \
       unzip \
       shadow; \

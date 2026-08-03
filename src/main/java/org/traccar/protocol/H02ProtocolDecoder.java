@@ -34,13 +34,18 @@ import org.traccar.model.Position;
 
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.text.DateFormat;
-import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
-import java.util.TimeZone;
 import java.util.regex.Pattern;
 
 public class H02ProtocolDecoder extends BaseProtocolDecoder {
+
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter
+            .ofPattern("HHmmss").withZone(ZoneOffset.UTC);
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter
+            .ofPattern("yyyyMMddHHmmss").withZone(ZoneOffset.UTC);
 
     public H02ProtocolDecoder(Protocol protocol) {
         super(protocol);
@@ -63,7 +68,7 @@ public class H02ProtocolDecoder extends BaseProtocolDecoder {
             length = 5;
         }
 
-        result = result * 10 + BcdUtil.readInteger(buf, length) * 0.0001;
+        result = result * 10 + BcdUtil.readInteger(buf, length) / 10000.0;
 
         result /= 60;
         result += degrees;
@@ -102,34 +107,6 @@ public class H02ProtocolDecoder extends BaseProtocolDecoder {
         } else {
             return null;
         }
-    }
-
-    private Position decodeTransparent(ByteBuf buf, Channel channel, SocketAddress remoteAddress) {
-
-        Position position = new Position(getProtocolName());
-
-        DeviceSession deviceSession = getDeviceSession(channel, remoteAddress);
-        if (deviceSession == null) {
-            return null;
-        }
-        position.setDeviceId(deviceSession.getDeviceId());
-
-        buf.skipBytes(24); // header
-
-        int dataType = buf.readUnsignedShort();
-        int dataLength = buf.readUnsignedShort();
-
-        if (dataType == 0x4009) {
-            position.set(
-                    Position.KEY_DRIVER_UNIQUE_ID,
-                    buf.readCharSequence(dataLength, StandardCharsets.US_ASCII).toString());
-        } else {
-            position.set("data", ByteBufUtil.hexDump(buf.readSlice(dataLength)));
-        }
-
-        getLastLocation(position, null);
-
-        return position;
     }
 
     private Position decodeBinary(ByteBuf buf, Channel channel, SocketAddress remoteAddress) {
@@ -183,6 +160,10 @@ public class H02ProtocolDecoder extends BaseProtocolDecoder {
 
         processStatus(position, buf.readUnsignedInt());
 
+        if (getConfig().getBoolean(Keys.PROTOCOL_ACK.withPrefix(getProtocolName()))) {
+            sendResponse(channel, remoteAddress, id, "R12");
+        }
+
         return position;
     }
 
@@ -205,14 +186,14 @@ public class H02ProtocolDecoder extends BaseProtocolDecoder {
             .groupBegin()
             .number("-(d+)-(d+.d+),([NS]),")     // latitude
             .or()
-            .number("(d+)(dd.d+),([NS]),")       // latitude
+            .number("(d*)(dd.d+),([NS]),")       // latitude
             .or()
             .number("(d+)(dd)(d{4}),([NS]),")    // latitude
             .groupEnd()
             .groupBegin()
             .number("-(d+)-(d+.d+),([EW]),")     // longitude
             .or()
-            .number("(d+)(dd.d+),([EW]),")       // longitude
+            .number("(d*)(dd.d+),([EW]),")       // longitude
             .or()
             .number("(d+)(dd)(d{4}),([EW]),")    // longitude
             .groupEnd()
@@ -324,12 +305,18 @@ public class H02ProtocolDecoder extends BaseProtocolDecoder {
             .any()
             .compile();
 
+    private static final Pattern PATTERN_SMS = new PatternBuilder()
+            .text("*HQ,")
+            .number("(d+),")                     // id
+            .text("SMS,")
+            .expression("(.+)")
+            .text("#")
+            .compile();
+
     private void sendResponse(Channel channel, SocketAddress remoteAddress, String id, String type) {
         if (channel != null && id != null) {
             String response;
-            DateFormat dateFormat = new SimpleDateFormat(type.equals("R12") ? "HHmmss" : "yyyyMMddHHmmss");
-            dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
-            String time = dateFormat.format(new Date());
+            String time = (type.equals("R12") ? TIME_FORMAT : DATE_FORMAT).format(Instant.now());
             if (type.equals("R12")) {
                 response = String.format("*HQ,%s,%s,%s#", id, type, time);
             } else {
@@ -381,7 +368,7 @@ public class H02ProtocolDecoder extends BaseProtocolDecoder {
         if (parser.hasNext(3)) {
             position.setLatitude(parser.nextCoordinate());
         }
-        if (parser.hasNext(3)) {
+        if (parser.hasNextAny(3)) {
             position.setLatitude(parser.nextCoordinate());
         }
         if (parser.hasNext(4)) {
@@ -391,7 +378,7 @@ public class H02ProtocolDecoder extends BaseProtocolDecoder {
         if (parser.hasNext(3)) {
             position.setLongitude(parser.nextCoordinate());
         }
-        if (parser.hasNext(3)) {
+        if (parser.hasNextAny(3)) {
             position.setLongitude(parser.nextCoordinate());
         }
         if (parser.hasNext(4)) {
@@ -415,7 +402,7 @@ public class H02ProtocolDecoder extends BaseProtocolDecoder {
         if (parser.hasNext(6)) {
             position.set(Position.KEY_ODOMETER, parser.nextInt(0));
             position.set(Position.PREFIX_TEMP + 1, parser.nextInt(0));
-            position.set(Position.KEY_FUEL_LEVEL, parser.nextDouble(0));
+            position.set(Position.KEY_FUEL, parser.nextDouble(0));
 
             position.setAltitude(parser.nextInt(0));
 
@@ -549,6 +536,28 @@ public class H02ProtocolDecoder extends BaseProtocolDecoder {
         return position;
     }
 
+    private Position decodeSms(String sentence, Channel channel, SocketAddress remoteAddress) {
+
+        Parser parser = new Parser(PATTERN_SMS, sentence);
+        if (!parser.matches()) {
+            return null;
+        }
+
+        DeviceSession deviceSession = getDeviceSession(channel, remoteAddress, parser.next());
+        if (deviceSession == null) {
+            return null;
+        }
+
+        Position position = new Position(getProtocolName());
+        position.setDeviceId(deviceSession.getDeviceId());
+
+        getLastLocation(position, null);
+
+        position.set(Position.KEY_RESULT, parser.next());
+
+        return position;
+    }
+
     private Position decodeVp1(String sentence, Channel channel, SocketAddress remoteAddress) {
 
         Parser parser = new Parser(PATTERN_VP1, sentence);
@@ -627,11 +636,6 @@ public class H02ProtocolDecoder extends BaseProtocolDecoder {
 
         switch (marker) {
             case "*" -> {
-                if (buf.readableBytes() >= 28 && buf.getCharSequence(
-                        buf.readerIndex() + 22, 2, StandardCharsets.US_ASCII).toString().equals("GY")) {
-                    return decodeTransparent(buf, channel, remoteAddress);
-                }
-
                 String sentence = buf.toString(StandardCharsets.US_ASCII).trim();
                 int typeStart = sentence.indexOf(',', sentence.indexOf(',') + 1) + 1;
                 int typeEnd = sentence.indexOf(',', typeStart);
@@ -652,6 +656,7 @@ public class H02ProtocolDecoder extends BaseProtocolDecoder {
                         case "LINK" -> decodeLink(sentence, channel, remoteAddress);
                         case "V3" -> decodeV3(sentence, channel, remoteAddress);
                         case "VP1" -> decodeVp1(sentence, channel, remoteAddress);
+                        case "SMS" -> decodeSms(sentence, channel, remoteAddress);
                         default -> decodeText(sentence, channel, remoteAddress);
                     };
                 } else {

@@ -3,6 +3,9 @@ package org.traccar;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.http.DefaultFullHttpRequest;
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.DefaultHttpHeaders;
@@ -32,6 +35,8 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 public class ProtocolTest extends BaseTest {
 
@@ -93,6 +98,10 @@ public class ProtocolTest extends BaseTest {
         return new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, method, url, Unpooled.buffer(), headers, new DefaultHttpHeaders());
     }
 
+    protected DefaultFullHttpRequest request(HttpMethod method, String url, HttpHeaders headers, ByteBuf data) {
+        return new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, method, url, data, headers, new DefaultHttpHeaders());
+    }
+
     protected DefaultFullHttpResponse response(ByteBuf data) {
         return new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK, data);
     }
@@ -121,6 +130,8 @@ public class ProtocolTest extends BaseTest {
             case "speed" -> assertEquals(expected, position.getSpeed());
             case "course" -> assertEquals(expected, position.getCourse());
             case "altitude" -> assertEquals(expected, position.getAltitude());
+            case "network" -> assertEquals(expected, position.getNetwork());
+
             default -> assertEquals(expected, position.getAttributes().get(key));
         }
     }
@@ -253,8 +264,8 @@ public class ProtocolTest extends BaseTest {
             assertInstanceOf(Number.class, attributes.get(Position.KEY_RPM));
         }
 
-        if (attributes.containsKey(Position.KEY_FUEL_LEVEL)) {
-            assertInstanceOf(Number.class, attributes.get(Position.KEY_FUEL_LEVEL));
+        if (attributes.containsKey(Position.KEY_FUEL)) {
+            assertInstanceOf(Number.class, attributes.get(Position.KEY_FUEL));
         }
 
         if (attributes.containsKey(Position.KEY_FUEL_USED)) {
@@ -340,6 +351,16 @@ public class ProtocolTest extends BaseTest {
     protected void verifyCommand(
             BaseProtocolEncoder encoder, Command command, ByteBuf expected) {
         verifyFrame(expected, encoder.encodeCommand(command));
+    }
+
+    protected Object encodeCommand(
+            BaseProtocolEncoder encoder, BaseProtocolDecoder decoder, Command command) {
+        var pipeline = mock(ChannelPipeline.class);
+        when(pipeline.iterator()).thenReturn(
+                List.<Map.Entry<String, ChannelHandler>>of(Map.entry("decoder", decoder)).iterator());
+        var channel = mock(Channel.class);
+        when(channel.pipeline()).thenReturn(pipeline);
+        return encoder.encodeCommand(channel, command);
     }
 
     protected void verifyFrame(ByteBuf expected, Object object) {
