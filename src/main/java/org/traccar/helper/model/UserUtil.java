@@ -30,8 +30,7 @@ import java.util.TimeZone;
 
 public final class UserUtil {
 
-    private UserUtil() {
-    }
+    private UserUtil() {}
 
     public static boolean isEmpty(Storage storage) throws StorageException {
         return storage.getObjects(User.class, new Request(
@@ -54,6 +53,10 @@ public final class UserUtil {
     public static TimeZone getTimezone(Server server, User user) {
         String timezone = lookupStringAttribute(server, user, "timezone", null);
         return timezone != null ? TimeZone.getTimeZone(timezone) : TimeZone.getDefault();
+    }
+
+    public static String getLanguage(Server server, User user) {
+        return lookupStringAttribute(server, user, "language", null);
     }
 
     private static String lookupStringAttribute(Server server, User user, String key, String defaultValue) {

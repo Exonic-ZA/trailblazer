@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 - 2024 Anton Tananaev (anton@traccar.org)
+ * Copyright 2018 - 2026 Anton Tananaev (anton@traccar.org)
  * Copyright 2018 Andrey Kunitsyn (andrey@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,6 +16,8 @@
  */
 package org.traccar.notificators;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
@@ -48,6 +50,7 @@ import org.traccar.storage.query.Request;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
@@ -57,26 +60,32 @@ import java.util.List;
 public class NotificatorFirebase extends Notificator {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(NotificatorFirebase.class);
+
     private final Storage storage;
     private final CacheManager cacheManager;
+    private final ObjectMapper objectMapper;
+    private final String mode;
+    private final FirebaseMessaging firebaseMessaging;
 
     @Inject
     public NotificatorFirebase(
             Config config, NotificationFormatter notificationFormatter,
-            Storage storage, CacheManager cacheManager) throws IOException {
-
-        super(notificationFormatter, "short");
+            Storage storage, CacheManager cacheManager, ObjectMapper objectMapper) throws IOException {
+        super(notificationFormatter);
         this.storage = storage;
         this.cacheManager = cacheManager;
+        this.objectMapper = objectMapper;
+        this.mode = config.getString(Keys.NOTIFICATOR_FIREBASE_MODE);
 
         InputStream serviceAccount = new ByteArrayInputStream(
-                config.getString(Keys.NOTIFICATOR_FIREBASE_SERVICE_ACCOUNT).getBytes());
+                config.getString(Keys.NOTIFICATOR_FIREBASE_SERVICE_ACCOUNT).getBytes(StandardCharsets.UTF_8));
 
         FirebaseOptions options = FirebaseOptions.builder()
                 .setCredentials(GoogleCredentials.fromStream(serviceAccount))
                 .build();
 
-        FirebaseApp.initializeApp(options);
+        firebaseMessaging = FirebaseMessaging.getInstance(
+                FirebaseApp.initializeApp(options, "manager"));
     }
 
     @Override
@@ -86,29 +95,45 @@ public class NotificatorFirebase extends Notificator {
             List<String> registrationTokens = new ArrayList<>(
                     Arrays.asList(user.getString("notificationTokens").split("[, ]")));
 
+            var androidConfig = AndroidConfig.builder()
+                    .setNotification(AndroidNotification.builder().setSound("default").build());
+
+            var apnsConfig = ApnsConfig.builder()
+                    .setAps(Aps.builder().setSound("default").build());
+
+            if (message.priority()) {
+                androidConfig.setPriority(AndroidConfig.Priority.HIGH);
+                apnsConfig.putHeader("apns-priority", "10");
+            }
+
             var messageBuilder = MulticastMessage.builder()
-                    .setNotification(com.google.firebase.messaging.Notification.builder()
-                            .setTitle(message.getSubject())
-                            .setBody(message.getBody())
-                            .build())
-                    .setAndroidConfig(AndroidConfig.builder()
-                            .setNotification(AndroidNotification.builder()
-                                    .setSound("default")
-                                    .build())
-                            .build())
-                    .setApnsConfig(ApnsConfig.builder()
-                            .setAps(Aps.builder()
-                                    .setSound("default")
-                                    .build())
-                            .build())
+                    .setAndroidConfig(androidConfig.build())
+                    .setApnsConfig(apnsConfig.build())
                     .addAllTokens(registrationTokens);
+
+            if (!"data".equals(mode)) {
+                messageBuilder.setNotification(com.google.firebase.messaging.Notification.builder()
+                        .setTitle(message.subject())
+                        .setBody(message.digest())
+                        .build());
+            }
 
             if (event != null) {
                 messageBuilder.putData("eventId", String.valueOf(event.getId()));
+                if (!"direct".equals(mode)) {
+                    try {
+                        messageBuilder.putData("event", objectMapper.writeValueAsString(event));
+                        if (position != null) {
+                            messageBuilder.putData("position", objectMapper.writeValueAsString(position));
+                        }
+                    } catch (JsonProcessingException e) {
+                        LOGGER.warn("Firebase data serialization error", e);
+                    }
+                }
             }
 
             try {
-                var result = FirebaseMessaging.getInstance().sendEachForMulticast(messageBuilder.build());
+                var result = firebaseMessaging.sendEachForMulticast(messageBuilder.build());
                 List<String> failedTokens = new LinkedList<>();
                 var iterator = result.getResponses().listIterator();
                 while (iterator.hasNext()) {
@@ -125,7 +150,7 @@ public class NotificatorFirebase extends Notificator {
                 if (!failedTokens.isEmpty()) {
                     registrationTokens.removeAll(failedTokens);
                     if (registrationTokens.isEmpty()) {
-                        user.getAttributes().remove("notificationTokens");
+                        user.removeAttribute("notificationTokens");
                     } else {
                         user.set("notificationTokens", String.join(",", registrationTokens));
                     }

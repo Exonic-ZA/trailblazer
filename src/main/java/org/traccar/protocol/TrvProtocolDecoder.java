@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 - 2024 Anton Tananaev (anton@traccar.org)
+ * Copyright 2015 - 2025 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,12 +30,19 @@ import org.traccar.model.Position;
 import org.traccar.model.WifiAccessPoint;
 
 import java.net.SocketAddress;
-import java.text.SimpleDateFormat;
-import java.util.Date;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.regex.Pattern;
 import java.util.Set;
 
 public class TrvProtocolDecoder extends BaseProtocolDecoder {
+
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter
+            .ofPattern("yyyyMMddHHmmss").withZone(ZoneId.systemDefault());
+
+    private static final Set<String> IGNORE_RESPONSE = Set.of(
+        "AP12", "AP14", "AP33", "AP34", "AP40", "AP76", "AP77", "AP84", "AP85", "AP86", "AP87");
 
     public TrvProtocolDecoder(Protocol protocol) {
         super(protocol);
@@ -177,11 +184,11 @@ public class TrvProtocolDecoder extends BaseProtocolDecoder {
         if (channel != null) {
             String responseHeader = id + (char) (type.charAt(0) + 1) + type.substring(1);
             if (type.equals("AP00") && id.equals("IW")) {
-                String time = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+                String time = DATE_FORMAT.format(Instant.now());
                 channel.writeAndFlush(new NetworkMessage(responseHeader + "," + time + ",0#", remoteAddress));
             } else if (type.equals("AP14") && !id.equals("IW")) {
                 channel.writeAndFlush(new NetworkMessage(responseHeader + ",0.000,0.000#", remoteAddress));
-            } else if (!Set.of("AP12", "AP14", "AP33", "AP34", "AP40", "AP76", "AP77", "AP84", "AP85").contains(type)
+            } else if (!IGNORE_RESPONSE.contains(type)
                     && !sentence.substring(responseHeader.length() + 1).matches("^\\d{6}$")) {
                 channel.writeAndFlush(new NetworkMessage(responseHeader + "#", remoteAddress));
             }

@@ -28,6 +28,7 @@ import org.traccar.session.DeviceSession;
 import org.traccar.Protocol;
 import org.traccar.helper.BitUtil;
 import org.traccar.helper.DateBuilder;
+import org.traccar.helper.DateUtil;
 import org.traccar.helper.UnitsConverter;
 import org.traccar.model.CellTower;
 import org.traccar.model.Network;
@@ -35,18 +36,19 @@ import org.traccar.model.Position;
 
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.text.DateFormat;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.TimeZone;
 import java.util.stream.Collectors;
 
 public class SuntechProtocolDecoder extends BaseProtocolDecoder {
+
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter
+            .ofPattern("yyyyMMddHH:mm:ss").withZone(ZoneOffset.UTC);
 
     private boolean universal;
     private String prefix;
@@ -120,7 +122,7 @@ public class SuntechProtocolDecoder extends BaseProtocolDecoder {
     }
 
     private Position decode9(
-            Channel channel, SocketAddress remoteAddress, String[] values) throws ParseException {
+            Channel channel, SocketAddress remoteAddress, String[] values) {
         int index = 1;
 
         String type = values[index++];
@@ -145,9 +147,7 @@ public class SuntechProtocolDecoder extends BaseProtocolDecoder {
             position.set(Position.KEY_VERSION_FW, values[index++]);
         }
 
-        DateFormat dateFormat = new SimpleDateFormat("yyyyMMddHH:mm:ss");
-        dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
-        position.setTime(dateFormat.parse(values[index++] + values[index++]));
+        position.setTime(DateUtil.parse(DATE_FORMAT, values[index++] + values[index++]));
 
         if (getProtocolType(deviceSession.getDeviceId()) == 1) {
             index += 1; // cell
@@ -198,7 +198,7 @@ public class SuntechProtocolDecoder extends BaseProtocolDecoder {
         };
     }
     private Position decode4(
-            Channel channel, SocketAddress remoteAddress, String[] values) throws ParseException {
+            Channel channel, SocketAddress remoteAddress, String[] values) {
         int index = 0;
 
         String type = values[index++].substring(5);
@@ -265,9 +265,7 @@ public class SuntechProtocolDecoder extends BaseProtocolDecoder {
 
         } else {
 
-            DateFormat dateFormat = new SimpleDateFormat("yyyyMMddHH:mm:ss");
-            dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
-            position.setTime(dateFormat.parse(values[index++] + values[index++]));
+            position.setTime(DateUtil.parse(DATE_FORMAT, values[index++] + values[index++]));
 
             position.setLatitude(Double.parseDouble(values[index++]));
             position.setLongitude(Double.parseDouble(values[index++]));
@@ -326,13 +324,13 @@ public class SuntechProtocolDecoder extends BaseProtocolDecoder {
             remaining -= attribute.length() + 1;
         }
         if (totalFuel > 0) {
-            position.set(Position.KEY_FUEL_LEVEL, totalFuel);
+            position.set(Position.KEY_FUEL, totalFuel);
         }
         return index + 1; // checksum
     }
 
     private Position decode2356(
-            Channel channel, SocketAddress remoteAddress, String protocol, String[] values) throws ParseException {
+            Channel channel, SocketAddress remoteAddress, String protocol, String[] values) {
         int index = 0;
 
         String type = values[index++].substring(5);
@@ -352,6 +350,7 @@ public class SuntechProtocolDecoder extends BaseProtocolDecoder {
         position.set(Position.KEY_TYPE, type);
 
         if (result) {
+            getLastLocation(position, null);
             position.set(Position.KEY_RESULT, String.join(";", Arrays.copyOfRange(values, index, values.length)));
             return position;
         }
@@ -367,9 +366,7 @@ public class SuntechProtocolDecoder extends BaseProtocolDecoder {
 
         position.set(Position.KEY_VERSION_FW, values[index++]);
 
-        DateFormat dateFormat = new SimpleDateFormat("yyyyMMddHH:mm:ss");
-        dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
-        position.setTime(dateFormat.parse(values[index++] + values[index++]));
+        position.setTime(DateUtil.parse(DATE_FORMAT, values[index++] + values[index++]));
 
         if (!protocol.equals("ST500")) {
             long cid = Long.parseLong(values[index++], 16);
@@ -413,7 +410,8 @@ public class SuntechProtocolDecoder extends BaseProtocolDecoder {
             case "UEX" -> index = decodeSerialData(position, values, index);
         }
 
-        if (getHbm(deviceSession.getDeviceId()) == 1) {
+        int hbm = getHbm(deviceSession.getDeviceId());
+        if (hbm >= 1) {
 
             if (index < values.length) {
                 position.set(Position.KEY_HOURS, UnitsConverter.msFromMinutes(Integer.parseInt(values[index++])));
@@ -439,7 +437,7 @@ public class SuntechProtocolDecoder extends BaseProtocolDecoder {
                 position.set(Position.KEY_RPM, Integer.parseInt(values[index++]));
             }
 
-            if (values.length - index >= 2) {
+            if (values.length - index >= (hbm == 1 ? 2 : 7)) {
                 String driverUniqueId = values[index++];
                 if (!driverUniqueId.isEmpty()) {
                     position.set(Position.KEY_DRIVER_UNIQUE_ID, driverUniqueId);
@@ -458,13 +456,24 @@ public class SuntechProtocolDecoder extends BaseProtocolDecoder {
 
             }
 
+            if (hbm >= 2) {
+                if (values.length - index >= 5) {
+                    int cid = Integer.parseInt(values[index++]);
+                    int mcc = Integer.parseInt(values[index++]);
+                    int mnc = Integer.parseInt(values[index++]);
+                    int rssi = Integer.parseInt(values[index++]);
+                    int lac = Integer.parseInt(values[index++]);
+                    position.setNetwork(new Network(CellTower.from(mcc, mnc, lac, cid, rssi)));
+                }
+            }
+
         }
 
         return position;
     }
 
     private Position decodeUniversal(
-            Channel channel, SocketAddress remoteAddress, String[] values) throws ParseException {
+            Channel channel, SocketAddress remoteAddress, String[] values) {
         int index = 0;
 
         String type = values[index++];
@@ -511,9 +520,7 @@ public class SuntechProtocolDecoder extends BaseProtocolDecoder {
         }
 
         if (BitUtil.check(mask, 4) && BitUtil.check(mask, 5)) {
-            DateFormat dateFormat = new SimpleDateFormat("yyyyMMddHH:mm:ss");
-            dateFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
-            position.setTime(dateFormat.parse(values[index++] + values[index++]));
+            position.setTime(DateUtil.parse(DATE_FORMAT, values[index++] + values[index++]));
         }
 
         CellTower cellTower = new CellTower();
@@ -627,6 +634,15 @@ public class SuntechProtocolDecoder extends BaseProtocolDecoder {
                         position.set(Position.PREFIX_IO + (i + 1), values[index++]);
                     }
                 }
+            }
+
+            int assignIndex = 1;
+            while (index < values.length) {
+                String value = values[index++];
+                if (!value.isEmpty()) {
+                    position.set("assign" + assignIndex, value);
+                }
+                assignIndex++;
             }
 
         }
@@ -887,10 +903,10 @@ public class SuntechProtocolDecoder extends BaseProtocolDecoder {
 
                 position.setValid(true);
                 position.setTime(time);
-                position.setLatitude(crash.readIntLE() * 0.0000001);
-                position.setLongitude(crash.readIntLE() * 0.0000001);
-                position.setSpeed(UnitsConverter.knotsFromKph(crash.readUnsignedShort() * 0.01));
-                position.setCourse(crash.readUnsignedShort() * 0.01);
+                position.setLatitude(crash.readIntLE() / 10000000.0);
+                position.setLongitude(crash.readIntLE() / 10000000.0);
+                position.setSpeed(UnitsConverter.knotsFromKph(crash.readUnsignedShort() / 100.0));
+                position.setCourse(crash.readUnsignedShort() / 100.0);
 
                 StringBuilder value = new StringBuilder("[");
                 for (int i = 0; i < 100; i++) {
@@ -956,9 +972,10 @@ public class SuntechProtocolDecoder extends BaseProtocolDecoder {
                 return decode9(channel, remoteAddress, values);
             } else if (prefix.startsWith("ST4")) {
                 return decode4(channel, remoteAddress, values);
-            } else {
+            } else if (prefix.startsWith("S")) {
                 return decode2356(channel, remoteAddress, prefix.substring(0, 5), values);
             }
+            return null;
         }
     }
 

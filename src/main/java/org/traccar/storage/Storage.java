@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Anton Tananaev (anton@traccar.org)
+ * Copyright 2022 - 2025 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,27 @@ import org.traccar.model.BaseModel;
 import org.traccar.model.Permission;
 import org.traccar.storage.query.Request;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 
 public abstract class Storage {
 
+    public static final int MAX_GROUP_DEPTH = 3;
+
     public abstract <T> List<T> getObjects(Class<T> clazz, Request request) throws StorageException;
 
+    public abstract <T> Stream<T> getObjectsStream(Class<T> clazz, Request request) throws StorageException;
+
     public abstract <T> long addObject(T entity, Request request) throws StorageException;
+
+    public <T> List<Long> addObjects(List<T> entities, Request request) throws StorageException {
+        List<Long> ids = new ArrayList<>(entities.size());
+        for (T entity : entities) {
+            ids.add(addObject(entity, request));
+        }
+        return ids;
+    }
 
     public abstract <T> void updateObject(T entity, Request request) throws StorageException;
 
@@ -46,8 +60,9 @@ public abstract class Storage {
     }
 
     public <T> T getObject(Class<T> clazz, Request request) throws StorageException {
-        var objects = getObjects(clazz, request);
-        return objects.isEmpty() ? null : objects.get(0);
+        try (var objects = getObjectsStream(clazz, request)) {
+            return objects.findFirst().orElse(null);
+        }
     }
 
 }

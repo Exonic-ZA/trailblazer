@@ -18,6 +18,28 @@ public class Gt06ProtocolDecoderTest extends ProtocolTest {
                 "78780D01086471700328358100093F040D0A"));
 
         verifyAttribute(decoder, binary(
+                "78782da41a0509160203cf05be31f80c306530001c0010012ed000007ef40000000006428b074205041302ff0009389c0d0a"),
+                Position.KEY_ALARM, Position.ALARM_TAMPERING);
+
+        verifyAttribute(decoder, binary(
+                "78782e610869412070143950190a1e0d3806c802b0eb0f0561ecdc00d80002d404000004215f0e000001395581000d1ca60d0a"),
+                Position.KEY_DRIVER_UNIQUE_ID, "20534657");
+
+        verifyAttribute(decoder, binary(
+                "7979001f70002c00046919c641007f000ec4a82841074a7fff64012201dc071ea430360d0a"),
+                "tag1Temp", 29.0);
+
+        verifyAttribute(decoder, binary(
+                "79790008940b02e3048614200d0a"),
+                Position.KEY_POWER, 7.39);
+
+        verifyPosition(decoder, binary(
+                "7979003e3819050e0e0c26c5010fd98e0905f53000ccab0e000302c80100000c240000000000048b08001b002e04000015c4003b020000003c0401020001021f60220d0a"));
+
+        verifyAttributes(decoder, binary(
+                "78780ca346000106640c01123d5f5e0d0a"));
+
+        verifyAttribute(decoder, binary(
                 "7979000e941e000000d5000002ee00f59b850d0a"),
                 Position.KEY_HUMIDITY, 75.0);
 
@@ -566,7 +588,32 @@ public class Gt06ProtocolDecoderTest extends ProtocolTest {
 
         verifyAttribute(decoder, binary(
                 "78783c22010357789648774484180c06142038180c06142038cb03313ee4061fe98300185e090000000000000000460984284c000200000000017101d6f35d0d0a"),
-                Position.KEY_HOURS, 22140000);
+                Position.KEY_HOURS, 22140000L);
+
+        decoder.setModelOverride("XT40");
+
+        verifyAttribute(decoder, binary(
+                "78783c220109999999999999991a04171433101a041714310fb00288a5a8050754500008000800000000000000000604e32933000200468b000025008d87ce0d0a"),
+                Position.KEY_POWER, 12.51);
+
+        verifyAttribute(decoder, binary(
+                "78783c22010357789648774484180c06142038180c06142038cb03313ee4061fe98300185e090000000000000000460984284c000200000000017101d6f35d0d0a"),
+                Position.KEY_BATTERY, 4.0);
+
+        verifyAttribute(decoder, binary(
+                "78784e25010356354871186947190909100e0f190909100e0fbf02846fe805078c900018000a02d410c80b0c352c17044605112a4700020000000005840f0102353130303635383036424446030113ed780d0a"),
+                Position.KEY_DRIVER_UNIQUE_ID, "0235313030363538303642444603");
+
+        decoder.setModelOverride("G18");
+
+        verifyAttribute(decoder, binary(
+                "787825161a011c141001cf00bc62e0043533a231113808028005006800124b470603300204baa49a0d0a"),
+                Position.KEY_ALARM, Position.ALARM_BRAKING);
+
+        decoder.setModelOverride("QH302R");
+
+        verifyPosition(decoder, binary(
+                "7878271208667030665022971a020c0a1e32c601727c1c0f89af002c14fa01366e000100010c003c1fdd0d0a"));
 
     }
 

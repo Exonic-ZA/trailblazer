@@ -80,13 +80,13 @@ public class PacificTrackProtocolDecoder extends BaseProtocolDecoder {
                     position.setLongitude(buf.readUnsignedInt() / 1000000.0 - 180.0);
                     int speedAndCourse = buf.readUnsignedMedium();
                     position.setCourse(BitUtil.from(speedAndCourse, 12));
-                    position.setSpeed(UnitsConverter.knotsFromKph(BitUtil.to(speedAndCourse, 12) * 0.1));
+                    position.setSpeed(UnitsConverter.knotsFromKph(BitUtil.to(speedAndCourse, 12) / 10.0));
                     position.set(Position.KEY_INDEX, buf.readUnsignedShort());
                     break;
                 case 0x20:
                     int voltage = buf.readUnsignedMedium();
-                    position.set(Position.KEY_BATTERY, BitUtil.between(voltage, 0, 12) * 0.01);
-                    position.set(Position.KEY_POWER, BitUtil.between(voltage, 12, 24) * 0.01);
+                    position.set(Position.KEY_BATTERY, BitUtil.between(voltage, 0, 12) / 100.0);
+                    position.set(Position.KEY_POWER, BitUtil.between(voltage, 12, 24) / 100.0);
                     break;
                 case 0x92:
                     while (buf.readerIndex() < segmentEnd) {
@@ -106,7 +106,7 @@ public class PacificTrackProtocolDecoder extends BaseProtocolDecoder {
                                 case 0b00101 -> position.set("oilTemp", buf.readUnsignedByte() - 40);
                                 case 0b00110 -> position.set("coolantLevel", buf.readUnsignedByte() * 0.4);
                                 case 0b00111 -> position.set(Position.KEY_COOLANT_TEMP, buf.readUnsignedByte() - 40);
-                                case 0b01000 -> position.set(Position.KEY_FUEL_LEVEL, buf.readUnsignedByte() * 0.4);
+                                case 0b01000 -> position.set(Position.KEY_FUEL, buf.readUnsignedByte() * 0.4);
                                 case 0b01001 -> position.set("defLevel", buf.readUnsignedByte() * 0.4);
                                 case 0b01010 -> position.set(Position.KEY_ENGINE_LOAD, buf.readUnsignedByte());
                                 case 0b01011 -> position.set("barometer", buf.readUnsignedByte() * 0.5);

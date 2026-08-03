@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 - 2023 Anton Tananaev (anton@traccar.org)
+ * Copyright 2022 - 2026 Anton Tananaev (anton@traccar.org)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,23 +15,28 @@
  */
 package org.traccar.storage;
 
+import org.traccar.helper.ReflectionCache;
 import org.traccar.model.BaseModel;
+import org.traccar.model.Device;
+import org.traccar.model.Group;
+import org.traccar.model.GroupedModel;
 import org.traccar.model.Pair;
 import org.traccar.model.Permission;
 import org.traccar.model.Server;
 import org.traccar.storage.query.Condition;
+import org.traccar.storage.query.Order;
 import org.traccar.storage.query.Request;
 
-import java.beans.Introspector;
-import java.lang.reflect.Method;
+import java.lang.invoke.MethodHandle;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class MemoryStorage extends Storage {
 
@@ -49,73 +54,145 @@ public class MemoryStorage extends Storage {
 
     @Override
     public <T> List<T> getObjects(Class<T> clazz, Request request) {
-        return objects.computeIfAbsent(clazz, key -> new HashMap<>()).values().stream()
-                .filter(object -> checkCondition(request.getCondition(), object))
-                .map(object -> (T) object)
-                .collect(Collectors.toList());
+        try (var objects = getObjectsStream(clazz, request)) {
+            return objects.toList();
+        }
+    }
+
+    @Override
+    public <T> Stream<T> getObjectsStream(Class<T> clazz, Request request) {
+        var stream = objects.computeIfAbsent(clazz, key -> new HashMap<>()).values().stream()
+                .filter(object -> checkCondition(request.getCondition(), object));
+        Order order = request.getOrder();
+        if (order != null) {
+            stream = stream.sorted((a, b) -> compareByOrder(a, b, order));
+            if (order.getOffset() > 0) {
+                stream = stream.skip(order.getOffset());
+            }
+            if (order.getLimit() > 0) {
+                stream = stream.limit(order.getLimit());
+            }
+        }
+        return stream.map(object -> (T) object);
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private int compareByOrder(Object a, Object b, Order order) {
+        int comparison = ((Comparable) retrieveValue(a, order.getColumn()))
+                .compareTo(retrieveValue(b, order.getColumn()));
+        return order.getDescending() ? -comparison : comparison;
     }
 
     private boolean checkCondition(Condition genericCondition, Object object) {
         if (genericCondition == null) {
             return true;
         }
-
-        if (genericCondition instanceof Condition.Compare condition) {
-
-            Object value = retrieveValue(object, condition.getVariable());
-            int result = ((Comparable) value).compareTo(condition.getValue());
-            return switch (condition.getOperator()) {
-                case "<" -> result < 0;
-                case "<=" -> result <= 0;
-                case ">" -> result > 0;
-                case ">=" -> result >= 0;
-                case "=" -> result == 0;
-                default -> throw new RuntimeException("Unsupported comparison condition");
-            };
-
-        } else if (genericCondition instanceof Condition.Between condition) {
-
-            Object fromValue = retrieveValue(object, condition.getFromVariable());
-            int fromResult = ((Comparable) fromValue).compareTo(condition.getFromValue());
-            Object toValue = retrieveValue(object, condition.getToVariable());
-            int toResult = ((Comparable) toValue).compareTo(condition.getToValue());
-            return fromResult >= 0 && toResult <= 0;
-
-        } else if (genericCondition instanceof Condition.Binary condition) {
-
-            if (condition.getOperator().equals("AND")) {
-                return checkCondition(condition.getFirst(), object) && checkCondition(condition.getSecond(), object);
-            } else if (condition.getOperator().equals("OR")) {
-                return checkCondition(condition.getFirst(), object) || checkCondition(condition.getSecond(), object);
+        return switch (genericCondition) {
+            case Condition.Compare condition -> {
+                Object value = retrieveValue(object, condition.getColumn());
+                int result = ((Comparable) value).compareTo(condition.getValue());
+                yield switch (condition.getOperator()) {
+                    case "<" -> result < 0;
+                    case "<=" -> result <= 0;
+                    case ">" -> result > 0;
+                    case ">=" -> result >= 0;
+                    case "=" -> result == 0;
+                    default -> throw new RuntimeException("Unsupported comparison condition");
+                };
             }
+            case Condition.Between condition -> {
+                Object fromValue = retrieveValue(object, condition.getColumn());
+                int fromResult = ((Comparable) fromValue).compareTo(condition.getFromValue());
+                Object toValue = retrieveValue(object, condition.getColumn());
+                int toResult = ((Comparable) toValue).compareTo(condition.getToValue());
+                yield fromResult >= 0 && toResult <= 0;
+            }
+            case Condition.Binary condition -> switch (condition.getOperator()) {
+                case "AND" -> checkCondition(condition.getFirst(), object)
+                        && checkCondition(condition.getSecond(), object);
+                case "OR" -> checkCondition(condition.getFirst(), object)
+                        || checkCondition(condition.getSecond(), object);
+                default -> false;
+            };
+            case Condition.Permission condition -> checkPermission(condition, object);
+            case Condition.Contains condition -> {
+                String needle = condition.getValue().toLowerCase(Locale.ROOT);
+                yield condition.getColumns().stream().anyMatch(column -> {
+                    Object value = retrieveValue(object, column);
+                    return value != null && value.toString().toLowerCase(Locale.ROOT).contains(needle);
+                });
+            }
+            case Condition.LatestPositions condition -> {
+                long positionId = (Long) retrieveValue(object, "id");
+                long positionDeviceId = (Long) retrieveValue(object, "deviceId");
+                if (condition.getDeviceId() > 0 && positionDeviceId != condition.getDeviceId()) {
+                    yield false;
+                }
+                yield objects.computeIfAbsent(Device.class, key -> new HashMap<>()).values().stream()
+                        .anyMatch(device -> (Long) retrieveValue(device, "positionId") == positionId);
+            }
+            default -> false;
+        };
+    }
 
-        } else if (genericCondition instanceof Condition.Permission condition) {
+    private boolean checkPermission(Condition.Permission condition, Object object) {
+        long objectId = (Long) retrieveValue(object, "id");
+        Class<?> ownerClass = condition.getOwnerClass();
+        Class<?> propertyClass = condition.getPropertyClass();
+        boolean ownerFixed = condition.getOwnerId() > 0;
+        long fixedId = ownerFixed ? condition.getOwnerId() : condition.getPropertyId();
 
-            long id = (Long) retrieveValue(object, "id");
-            return getPermissionsSet(condition.getOwnerClass(), condition.getPropertyClass()).stream()
-                    .anyMatch(pair -> {
-                        if (condition.getOwnerId() > 0) {
-                            return pair.first() == condition.getOwnerId() && pair.second() == id;
-                        } else {
-                            return pair.first() == id && pair.second() == condition.getPropertyId();
-                        }
-                    });
+        if (hasPermissionPair(ownerClass, propertyClass, ownerFixed, fixedId, objectId)) {
+            return true;
+        }
 
-        } else if (genericCondition instanceof Condition.LatestPositions) {
-
-            return false;
-
+        if (condition.getIncludeGroups()) {
+            Class<?> variableClass = ownerFixed ? propertyClass : ownerClass;
+            if (GroupedModel.class.isAssignableFrom(variableClass) && object instanceof GroupedModel grouped) {
+                Set<Long> ancestors = new HashSet<>();
+                collectAncestorGroups(grouped, ancestors);
+                Class<?> groupOwnerClass = ownerFixed ? ownerClass : Group.class;
+                Class<?> groupPropertyClass = ownerFixed ? Group.class : propertyClass;
+                for (long ancestorId : ancestors) {
+                    if (hasPermissionPair(groupOwnerClass, groupPropertyClass, ownerFixed, fixedId, ancestorId)) {
+                        return true;
+                    }
+                }
+            }
         }
 
         return false;
     }
 
+    private boolean hasPermissionPair(
+            Class<?> ownerClass, Class<?> propertyClass, boolean ownerFixed, long fixedId, long variableId) {
+        Set<Pair<Long, Long>> permissions = getPermissionsSet(ownerClass, propertyClass);
+        return ownerFixed
+                ? permissions.contains(new Pair<>(fixedId, variableId))
+                : permissions.contains(new Pair<>(variableId, fixedId));
+    }
+
+    private void collectAncestorGroups(GroupedModel object, Set<Long> result) {
+        long groupId = object.getGroupId();
+        int depth = 0;
+        while (groupId > 0 && depth++ < MAX_GROUP_DEPTH) {
+            if (!result.add(groupId)) {
+                break;
+            }
+            Object group = objects.computeIfAbsent(Group.class, key -> new HashMap<>()).get(groupId);
+            if (group instanceof GroupedModel parent) {
+                groupId = parent.getGroupId();
+            } else {
+                break;
+            }
+        }
+    }
+
     private Object retrieveValue(Object object, String key) {
+        MethodHandle handle = ReflectionCache.getProperties(object.getClass(), "get").get(key).handle();
         try {
-            Method method = object.getClass().getMethod(
-                    "get" + Character.toUpperCase(key.charAt(0)) + key.substring(1));
-            return method.invoke(object);
-        } catch (ReflectiveOperationException e) {
+            return handle.invokeExact(object);
+        } catch (Throwable e) {
             throw new RuntimeException(e);
         }
     }
@@ -129,7 +206,6 @@ public class MemoryStorage extends Storage {
 
     @Override
     public <T> void updateObject(T entity, Request request) {
-        Set<String> columns = new HashSet<>(request.getColumns().getColumns(entity.getClass(), "get"));
         Collection<Object> items;
         if (request.getCondition() != null) {
             long id = (Long) ((Condition.Equals) request.getCondition()).getValue();
@@ -137,18 +213,18 @@ public class MemoryStorage extends Storage {
         } else {
             items = objects.computeIfAbsent(entity.getClass(), key -> new HashMap<>()).values();
         }
-        for (Method setter : entity.getClass().getMethods()) {
-            if (setter.getName().startsWith("set") && setter.getParameterCount() == 1
-                    && columns.contains(Introspector.decapitalize(setter.getName()))) {
-                try {
-                    Method getter = entity.getClass().getMethod(setter.getName().replaceFirst("set", "get"));
-                    Object value = getter.invoke(entity);
-                    for (Object object : items) {
-                        setter.invoke(object, value);
-                    }
-                } catch (ReflectiveOperationException e) {
-                    throw new RuntimeException(e);
+        var getters = ReflectionCache.getProperties(entity.getClass(), "get");
+        var setters = ReflectionCache.getProperties(entity.getClass(), "set");
+        for (String column : request.getColumns().getColumns(entity.getClass(), "get")) {
+            MethodHandle setter = setters.get(column).handle();
+            MethodHandle getter = getters.get(column).handle();
+            try {
+                Object value = getter.invokeExact(entity);
+                for (Object object : items) {
+                    setter.invokeExact(object, value);
                 }
+            } catch (Throwable e) {
+                throw new RuntimeException(e);
             }
         }
     }
@@ -171,7 +247,7 @@ public class MemoryStorage extends Storage {
                 .filter(pair -> ownerId == 0 || pair.first().equals(ownerId))
                 .filter(pair -> propertyId == 0 || pair.second().equals(propertyId))
                 .map(pair -> new Permission(ownerClass, pair.first(), propertyClass, pair.second()))
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @Override
