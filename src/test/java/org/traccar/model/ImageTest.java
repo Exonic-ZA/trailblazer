@@ -3,6 +3,7 @@ package org.traccar.model;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class ImageTest {
@@ -37,6 +38,16 @@ public class ImageTest {
         Image image = new Image();
         assertThrows(IllegalArgumentException.class, () -> image.setLongitude(-180.1));
         assertThrows(IllegalArgumentException.class, () -> image.setLongitude(180.1));
+    }
+
+    @Test
+    public void testFileExtensionNullUntilUploaded() {
+        // tc_images.fileextension is NOT NULL, so ImageResource.add substitutes an empty
+        // string when a client creates an Image without uploading content first.
+        Image image = new Image();
+        assertNull(image.getFileExtension());
+        image.setFileExtension("");
+        assertEquals("", image.getFileExtension());
     }
 
     @Test

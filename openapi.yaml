@@ -4010,16 +4010,18 @@ paths:
                 type: string
               example: incident.jpg
         '400':
-          description: Invalid image type or size
+          description: >-
+            Unsupported image subtype, size limit exceeded, or the user does not
+            have access to this Image. The body carries the server-side error text
           content: {}
         '401':
           description: Unauthorized
           content: {}
-        '403':
-          description: Image access denied
-          content: {}
         '404':
           description: Image not found
+          content: {}
+        '415':
+          description: Content type is not `image/*`
           content: {}
   /uploads/{id}/{fileName}:
     get:
@@ -4890,7 +4892,7 @@ components:
           type: string
           description: >-
             Set by the server when content is uploaded, derived from the request
-            content type
+            content type. Empty on a newly created Image that has no content yet
           examples:
             - jpg
             - png

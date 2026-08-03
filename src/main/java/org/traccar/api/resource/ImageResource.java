@@ -142,6 +142,12 @@ public class ImageResource extends BaseObjectResource<Image> {
     @Override
     public Response add(Image entity) throws Exception {
         entity.setUploadedAt(new Date());
+        if (entity.getFileExtension() == null) {
+            // tc_images.fileextension is NOT NULL, but the extension is only known once
+            // content is uploaded. Store a placeholder so the two-step create-then-upload
+            // flow works without requiring clients to guess the value up front.
+            entity.setFileExtension("");
+        }
         return super.add(entity);
     }
 
