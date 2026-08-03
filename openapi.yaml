@@ -3807,10 +3807,12 @@ paths:
       operationId: getImages
       summary: Fetch a list of Images
       description: >-
-        Without params, it returns the Images linked to the current user.
-        The _id_ parameter takes precedence over _deviceId_/_groupId_, which in
-        turn take precedence over _all_/_userId_. All results are scoped to the
-        Images the user has access to and are returned newest first.
+        An Image is visible when it is linked to the user directly, or when the
+        user has access to the Device it was captured on (Group hierarchy
+        included) — so a manager sees Images uploaded against their Groups'
+        Devices. Admins with `all=true` see everything. Narrowing by _deviceId_
+        or _groupId_ restricts to those Devices; _id_ filters the visible set
+        rather than widening it. Results are newest first.
       tags:
         - Images
       parameters:

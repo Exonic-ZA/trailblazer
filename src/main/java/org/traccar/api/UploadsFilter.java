@@ -16,6 +16,7 @@
 package org.traccar.api;
 
 import com.google.inject.Provider;
+import org.traccar.api.resource.ImageAccess;
 import org.traccar.api.security.PermissionsService;
 import org.traccar.database.StatisticsManager;
 import org.traccar.helper.SessionHelper;
@@ -79,8 +80,8 @@ public class UploadsFilter implements Filter {
             if (imageId != null) {
                 Image image = storage.getObject(Image.class, new Request(
                         new Columns.All(), new Condition.Equals("id", imageId)));
-                if (image != null) {
-                    permissionsServiceProvider.get().checkPermission(Image.class, userId, image.getId());
+                if (image != null
+                        && ImageAccess.allowed(storage, permissionsServiceProvider.get(), userId, image)) {
                     chain.doFilter(request, response);
                     return;
                 }

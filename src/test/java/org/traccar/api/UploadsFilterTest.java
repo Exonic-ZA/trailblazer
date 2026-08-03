@@ -10,12 +10,14 @@ import org.junit.jupiter.api.Test;
 import org.traccar.api.security.PermissionsService;
 import org.traccar.database.StatisticsManager;
 import org.traccar.helper.SessionHelper;
+import org.traccar.model.Device;
 import org.traccar.model.Image;
 import org.traccar.storage.Storage;
 import org.traccar.storage.query.Request;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -50,6 +52,13 @@ public class UploadsFilterTest {
         request = mock(HttpServletRequest.class);
         response = mock(HttpServletResponse.class);
         chain = mock(FilterChain.class);
+    }
+
+    private Image image(long id, long deviceId) {
+        Image image = new Image();
+        image.setId(id);
+        image.setDeviceId(deviceId);
+        return image;
     }
 
     private void authenticate(long userId) {
@@ -118,32 +127,89 @@ public class UploadsFilterTest {
     }
 
     @Test
-    public void testPermittedImagePassesThrough() throws Exception {
+    public void testDirectlyLinkedImagePassesThrough() throws Exception {
         authenticate(1);
         when(request.getPathInfo()).thenReturn("/42/photo.jpg");
-        Image image = new Image();
-        image.setId(42);
-        when(storage.getObject(eq(Image.class), any(Request.class))).thenReturn(image);
+        when(storage.getObject(eq(Image.class), any(Request.class))).thenReturn(image(42, 7));
+        when(permissionsService.notAdmin(1L)).thenReturn(true);
+        when(storage.getObjects(eq(Image.class), any(Request.class))).thenReturn(List.of(new Image()));
 
         filter.doFilter(request, response, chain);
 
-        verify(permissionsService).checkPermission(Image.class, 1L, 42L);
         verify(statisticsManager).registerRequest(1L);
         verify(chain).doFilter(request, response);
         verify(response, never()).sendError(anyInt());
     }
 
     @Test
+    public void testAccessibleDevicePassesThrough() throws Exception {
+        authenticate(1);
+        when(request.getPathInfo()).thenReturn("/42/photo.jpg");
+        when(storage.getObject(eq(Image.class), any(Request.class))).thenReturn(image(42, 7));
+        when(permissionsService.notAdmin(1L)).thenReturn(true);
+        // no direct tc_user_image row, but the user can reach the device
+        when(storage.getObjects(eq(Image.class), any(Request.class))).thenReturn(List.of());
+        when(storage.getObjects(eq(Device.class), any(Request.class))).thenReturn(List.of(new Device()));
+
+        filter.doFilter(request, response, chain);
+
+        verify(chain).doFilter(request, response);
+        verify(response, never()).sendError(anyInt());
+    }
+
+    @Test
+    public void testAdministratorPassesThrough() throws Exception {
+        authenticate(1);
+        when(request.getPathInfo()).thenReturn("/42/photo.jpg");
+        when(storage.getObject(eq(Image.class), any(Request.class))).thenReturn(image(42, 7));
+        when(permissionsService.notAdmin(1L)).thenReturn(false);
+
+        filter.doFilter(request, response, chain);
+
+        verify(chain).doFilter(request, response);
+        verify(response, never()).sendError(anyInt());
+    }
+
+    @Test
+    public void testUnrelatedUserForbidden() throws Exception {
+        authenticate(2);
+        when(request.getPathInfo()).thenReturn("/42/photo.jpg");
+        when(storage.getObject(eq(Image.class), any(Request.class))).thenReturn(image(42, 7));
+        when(permissionsService.notAdmin(2L)).thenReturn(true);
+        when(storage.getObjects(eq(Image.class), any(Request.class))).thenReturn(List.of());
+        when(storage.getObjects(eq(Device.class), any(Request.class))).thenReturn(List.of());
+
+        filter.doFilter(request, response, chain);
+
+        verify(response).sendError(HttpServletResponse.SC_FORBIDDEN);
+        verify(chain, never()).doFilter(any(), any());
+    }
+
+    @Test
+    public void testImageWithoutDeviceRequiresDirectLink() throws Exception {
+        authenticate(2);
+        when(request.getPathInfo()).thenReturn("/42/photo.jpg");
+        when(storage.getObject(eq(Image.class), any(Request.class))).thenReturn(image(42, 0));
+        when(permissionsService.notAdmin(2L)).thenReturn(true);
+        when(storage.getObjects(eq(Image.class), any(Request.class))).thenReturn(List.of());
+
+        filter.doFilter(request, response, chain);
+
+        verify(response).sendError(HttpServletResponse.SC_FORBIDDEN);
+        verify(storage, never()).getObjects(eq(Device.class), any(Request.class));
+        verify(chain, never()).doFilter(any(), any());
+    }
+
+    @Test
     public void testDeniedPermissionForbidden() throws Exception {
         authenticate(2);
         when(request.getPathInfo()).thenReturn("/42/photo.jpg");
-        Image image = new Image();
-        image.setId(42);
+        Image image = image(42, 7);
         when(storage.getObject(eq(Image.class), any(Request.class))).thenReturn(image);
         StringWriter body = new StringWriter();
         when(response.getWriter()).thenReturn(new PrintWriter(body));
         doThrow(new SecurityException("Image access denied"))
-                .when(permissionsService).checkPermission(eq(Image.class), anyLong(), anyLong());
+                .when(permissionsService).notAdmin(anyLong());
 
         filter.doFilter(request, response, chain);
 
