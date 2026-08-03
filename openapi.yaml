@@ -11,7 +11,7 @@ info:
     url: https://www.apache.org/licenses/LICENSE-2.0.html
   version: '6.14.5'
 servers:
-  - url: https://localhost:3000/api
+  - url: https://demo.traccar.org/api
     description: Demo Server 1
   - url: https://demo2.traccar.org/api
     description: Demo Server 2
@@ -81,6 +81,8 @@ tags:
     description: Password reset flow
   - name: Stream
     description: Live video streaming
+  - name: Images
+    description: Geotagged image metadata, upload and retrieval
 paths:
   /audit:
     get:
@@ -3800,6 +3802,269 @@ paths:
         '401':
           description: Unauthorized
           content: {}
+  /images:
+    get:
+      operationId: getImages
+      summary: Fetch a list of Images
+      description: >-
+        Without params, it returns the Images linked to the current user.
+        The _id_ parameter takes precedence over _deviceId_/_groupId_, which in
+        turn take precedence over _all_/_userId_. All results are scoped to the
+        Images the user has access to and are returned newest first.
+      tags:
+        - Images
+      parameters:
+        - name: all
+          in: query
+          description: Can only be used by admins or managers to fetch all entities
+          schema:
+            type: boolean
+        - name: userId
+          in: query
+          description: Standard users can use this only with their own _userId_
+          schema:
+            type: integer
+        - name: deviceId
+          in: query
+          description: >-
+            Repeatable. Standard users can use this only with _deviceId_s they
+            have access to
+          schema:
+            type: array
+            items:
+              type: integer
+        - name: groupId
+          in: query
+          description: >-
+            Repeatable. Expands to every accessible Device in the Group,
+            including nested Groups
+          schema:
+            type: array
+            items:
+              type: integer
+        - name: id
+          in: query
+          description: Repeatable. Fetch specific Images by identifier
+          schema:
+            type: array
+            items:
+              type: integer
+        - name: from
+          in: query
+          description: >-
+            in ISO 8601 format. eg. `1963-11-22T18:30:00Z`. Filters on
+            _uploadedAt_ and is only applied when both _from_ and _to_ are given
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: in ISO 8601 format. eg. `1963-11-22T18:30:00Z`
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Image'
+        '401':
+          description: Unauthorized
+          content: {}
+    post:
+      operationId: postImages
+      summary: Create an Image
+      description: >-
+        Registers the Image metadata and links it to the current user. The
+        _uploadedAt_ timestamp is set by the server and any supplied value is
+        ignored. Upload the bytes separately with `POST /images/{id}/upload`.
+      tags:
+        - Images
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Image'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Image'
+        '401':
+          description: Unauthorized
+          content: {}
+        '400':
+          description: Bad request
+          content: {}
+  /images/{id}:
+    get:
+      operationId: getImagesId
+      summary: Fetch an Image
+      tags:
+        - Images
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Image'
+        '401':
+          description: Unauthorized
+          content: {}
+        '404':
+          description: Not found
+          content: {}
+    put:
+      operationId: putImagesId
+      summary: Update an Image
+      tags:
+        - Images
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Image'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Image'
+        '401':
+          description: Unauthorized
+          content: {}
+        '400':
+          description: Bad request
+          content: {}
+    delete:
+      operationId: deleteImagesId
+      summary: Delete an Image
+      tags:
+        - Images
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '204':
+          description: No Content
+          content: {}
+        '401':
+          description: Unauthorized
+          content: {}
+  /images/{id}/upload:
+    post:
+      operationId: postImagesIdUpload
+      summary: Upload Image content
+      description: >-
+        Uploads the binary content for an existing Image. The file extension is
+        derived from the request `Content-Type` and stored on the Image. Maximum
+        size is 10 MB. Supported types are `image/jpeg`, `image/png`,
+        `image/gif`, `image/webp` and `image/svg+xml`. Once uploaded, the bytes
+        are served from `/uploads/{id}/{fileName}`.
+      tags:
+        - Images
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          image/*:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: incident.jpg
+        '400':
+          description: Invalid image type or size
+          content: {}
+        '401':
+          description: Unauthorized
+          content: {}
+        '403':
+          description: Image access denied
+          content: {}
+        '404':
+          description: Image not found
+          content: {}
+  /uploads/{id}/{fileName}:
+    get:
+      operationId: getUploadsIdFileName
+      summary: Fetch Image content
+      description: >-
+        Serves the stored bytes for an Image. Requires a session cookie; API key
+        and basic authentication are not accepted on this route. This is the URL
+        clients should render.
+      tags:
+        - Images
+      security:
+        - SessionCookie: []
+      parameters:
+        - name: id
+          in: path
+          description: Image identifier
+          required: true
+          schema:
+            type: integer
+        - name: fileName
+          in: path
+          description: >-
+            The Image _fileName_ and _fileExtension_ joined by a dot,
+            eg. `incident.jpg`
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        '401':
+          description: Unauthorized
+          content: {}
+        '403':
+          description: Image access denied or unknown Image
+          content: {}
+        '404':
+          description: File not found
+          content: {}
 components:
   schemas:
     Position:
@@ -4609,6 +4874,45 @@ components:
           type: object
           properties: {}
           description: Additional action attributes
+    Image:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique image identifier
+        fileName:
+          type: string
+          description: >-
+            Base name the content is stored under, without extension. Combined
+            with _fileExtension_ it forms the `/uploads/{id}/{fileName}` path
+        fileExtension:
+          type: string
+          description: >-
+            Set by the server when content is uploaded, derived from the request
+            content type
+          examples:
+            - jpg
+            - png
+            - gif
+            - webp
+            - svg
+        uploadedAt:
+          type: string
+          format: date-time
+          description: Server-assigned creation time, in ISO 8601 format
+        deviceId:
+          type: integer
+          format: int64
+          description: Identifier of the device the image relates to
+        latitude:
+          type: number
+          format: double
+          description: Capture latitude, between -90 and 90
+        longitude:
+          type: number
+          format: double
+          description: Capture longitude, between -180 and 180
   securitySchemes:
     BasicAuth:
       type: http
@@ -4616,3 +4920,7 @@ components:
     ApiKey:
       type: http
       scheme: bearer
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: JSESSIONID
